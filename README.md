@@ -3,6 +3,10 @@
 A modular and scalable implementation of the Fuxi weather forecasting model, designed for efficient pretraining and finetuning on large-scale atmospheric datasets. This repository provides a clean, cluster-ready pipeline for experimentation and reproducible research.
 
 ---
+> 🔗 **Previous Work:**
+> This repository is a refactored and improved version of an earlier implementation.
+> 👉 https://github.com/Artamta/Fuxi-Weather-Prediction
+- --
 
 ##  Features
 
