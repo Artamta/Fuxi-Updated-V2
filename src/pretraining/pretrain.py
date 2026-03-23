@@ -35,11 +35,11 @@ from torch.utils.data import DataLoader, Dataset
 import zarr
 
 try:
-    from .loss import LatitudeWeightedL1Loss
-    from .model import FuXi
+    from ..training.loss import LatitudeWeightedL1Loss
+    from ..models.fuxi_model import FuXi
 except ImportError:
-    from loss import LatitudeWeightedL1Loss
-    from model import FuXi
+    from src.training.loss import LatitudeWeightedL1Loss
+    from src.models.fuxi_model import FuXi
 
 
 # -----------------------------------------------------------------------------

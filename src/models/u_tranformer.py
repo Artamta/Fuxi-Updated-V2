@@ -22,10 +22,10 @@ import torch.nn as nn
 
 try:
     from .blocks import DownBlock, UpBlock
-    from .swin_v2 import SwinStage
+    from .swin import SwinStage
 except ImportError:
     from blocks import DownBlock, UpBlock
-    from swin_v2 import SwinStage
+    from swin import SwinStage
 
 
 class UTransformer(nn.Module):

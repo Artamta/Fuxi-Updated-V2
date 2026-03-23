@@ -4,7 +4,10 @@
 import sys
 import torch
 
-from model import FuXi
+try:
+    from ..models.fuxi_model import FuXi
+except ImportError:
+    from src.models.fuxi_model import FuXi
 
 
 def test_forward():

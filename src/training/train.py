@@ -23,10 +23,14 @@ try:
 except ImportError:
     TENSORBOARD_AVAILABLE = False
 
-from model import FuXi
-from loss import LatitudeWeightedL1Loss
-# Import the Zarr dataset class (adjust import if needed)
-from fuxi_train import FuXiZarrDataset
+try:
+    from ..models.fuxi_model import FuXi
+    from .loss import LatitudeWeightedL1Loss
+    from .fuxi_train import FuXiZarrDataset
+except ImportError:
+    from src.models.fuxi_model import FuXi
+    from src.training.loss import LatitudeWeightedL1Loss
+    from src.training.fuxi_train import FuXiZarrDataset
 
 # ---- Zarr store --------------------------------------------------------------
 ZARR_STORE = "/home/bedartha/public/datasets/as_downloaded/weatherbench2/era5/1959-2023_01_10-6h-240x121_equiangular_with_poles_conservative.zarr"

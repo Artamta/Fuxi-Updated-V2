@@ -17,12 +17,12 @@ import torch.nn.functional as F
 
 try:
     from .blocks import CubeEmbedding
-    from .u_transformer import UTransformer
-    from .swin_v2 import trunc_normal_
+    from .u_tranformer import UTransformer
+    from .swin import trunc_normal_
 except ImportError:
     from blocks import CubeEmbedding
-    from u_transformer import UTransformer
-    from swin_v2 import trunc_normal_
+    from u_tranformer import UTransformer
+    from swin import trunc_normal_
 
 
 class FuXi(nn.Module):

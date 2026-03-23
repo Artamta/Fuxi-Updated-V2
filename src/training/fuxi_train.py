@@ -25,7 +25,7 @@ if _THIS_DIR not in sys.path:
 
 try:
     from .loss import LatitudeWeightedL1Loss
-    from .pretraining import (
+    from ..pretraining.pretrain import (
         DEFAULT_PRESSURE_LEVELS,
         DEFAULT_PRESSURE_VARS,
         DEFAULT_SURFACE_VARS,
@@ -34,8 +34,8 @@ try:
         resolve_variable_names,
     )
 except ImportError:
-    from loss import LatitudeWeightedL1Loss
-    from pretraining import (
+    from src.training.loss import LatitudeWeightedL1Loss
+    from src.pretraining.pretrain import (
         DEFAULT_PRESSURE_LEVELS,
         DEFAULT_PRESSURE_VARS,
         DEFAULT_SURFACE_VARS,

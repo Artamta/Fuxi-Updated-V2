@@ -29,13 +29,13 @@ def check_model_import():
     FuXi = None
     import_method = None
     
-    # Strategy 1: Direct import from model.py
+    # Strategy 1: Canonical package import for this repository
     try:
-        from model import FuXi
-        import_method = "from model import FuXi"
+        from src.models.fuxi_model import FuXi
+        import_method = "from src.models.fuxi_model import FuXi"
         print(f"✓ Successfully imported using: {import_method}\n")
     except (ImportError, AttributeError) as e:
-        print(f"  Strategy 1 failed (from model import FuXi): {e}")
+        print(f"  Strategy 1 failed (from src.models.fuxi_model import FuXi): {e}")
     
     # Strategy 2: Package import (if in fuxi_paper directory)
     if FuXi is None and current_dir == "fuxi_paper":

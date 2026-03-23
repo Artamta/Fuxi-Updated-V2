@@ -52,7 +52,7 @@ def test_imports():
         return False
     
     try:
-        from model import FuXi
+        from src.models.fuxi_model import FuXi
         print(f"✓ FuXi model imported successfully")
         return True
     except ImportError as e:
@@ -223,7 +223,7 @@ def test_model_creation():
     
     try:
         import torch
-        from model import FuXi
+        from src.models.fuxi_model import FuXi
         
         # Create a small model
         model = FuXi(
@@ -307,7 +307,7 @@ def test_training_iteration(zarr_path):
         FuXiZarrDataset = fuxi_train.FuXiZarrDataset
         LatitudeWeightedL1Loss = fuxi_train.LatitudeWeightedL1Loss
         
-        from model import FuXi
+        from src.models.fuxi_model import FuXi
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"  Device: {device}")

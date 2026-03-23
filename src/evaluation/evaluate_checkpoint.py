@@ -36,9 +36,9 @@ from torch.utils.data import DataLoader, Dataset
 import zarr
 
 try:
-    from .model import FuXi
+    from ..models.fuxi_model import FuXi
 except ImportError:
-    from model import FuXi
+    from src.models.fuxi_model import FuXi
 
 
 DEFAULT_ZARR_STORE = (
