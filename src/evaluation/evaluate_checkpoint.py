@@ -452,7 +452,8 @@ def evaluate_rollout(
     std = std.to(device)
     clim = climatology.to(device)
 
-    for history, future, _init_time in loader:
+    total_batches = len(loader)
+    for batch_idx, (history, future, _init_time) in enumerate(loader, start=1):
         history = history.to(device, non_blocking=True)  # (B,C,2,H,W)
         future = future.to(device, non_blocking=True)    # (B,S,C,H,W)
         batch_size = history.shape[0]
@@ -485,6 +486,16 @@ def evaluate_rollout(
 
             # Next history uses predicted normalized frame
             hist = torch.stack([hist[:, :, 1], pred_n], dim=2)
+
+        if batch_idx == 1 or batch_idx % 10 == 0 or batch_idx == total_batches:
+            done = int(count[0].item())
+            avg_rmse_step1 = float(torch.sqrt((rmse_mse_sum[0] / count[0].clamp(min=1.0)).clamp(min=1e-12)).mean().item())
+            avg_acc_step1 = float((acc_sum[0] / count[0].clamp(min=1.0)).mean().item())
+            print(
+                f"[rollout] batch {batch_idx}/{total_batches} | samples={done} | "
+                f"step1_mean_rmse={avg_rmse_step1:.4f} | step1_mean_acc={avg_acc_step1:.4f}",
+                flush=True,
+            )
 
     denom = count.clamp(min=1.0).unsqueeze(1)
     rmse = torch.sqrt((rmse_mse_sum / denom).clamp(min=1e-12)).cpu().numpy()

@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import random
 import re
 import shutil
@@ -177,6 +178,7 @@ def resolve_climo_cache(args: argparse.Namespace, root: Path, ckpt: Path, outdir
 def run_eval(root: Path, ckpt: Path, outdir: Path, args: argparse.Namespace, climo_cache: Path | None) -> None:
     cmd = [
         sys.executable,
+        "-u",
         "-m",
         "src.evaluation.evaluate_checkpoint",
         "--checkpoint",
@@ -208,7 +210,9 @@ def run_eval(root: Path, ckpt: Path, outdir: Path, args: argparse.Namespace, cli
 
     print("Running evaluation:")
     print(" ".join(cmd))
-    subprocess.run(cmd, cwd=root, check=True)
+    env = dict(**os.environ)
+    env["PYTHONUNBUFFERED"] = "1"
+    subprocess.run(cmd, cwd=root, env=env, check=True)
 
 
 def load_mean_curves(metrics_csv: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
