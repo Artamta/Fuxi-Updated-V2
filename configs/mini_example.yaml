@@ -1,20 +1,20 @@
 data:
-  zarr_store: /path/to/weatherbench.zarr
+  zarr_store: /home/bedartha/public/datasets/as_downloaded/weatherbench2/era5/1959-2023_01_10-6h-240x121_equiangular_with_poles_conservative.zarr
   train_start: 1979-01-01
-  train_end: 1979-12-31
+  train_end: 1979-01-03
   val_start: 2016-01-01
-  val_end: 2016-06-30
+  val_end: 2016-01-04
   test_start: 2018-01-01
-  test_end: 2018-06-30
+  test_end: 2018-01-02
   history_steps: 2
-  pressure_vars: [q, t, u, v, z]
-  surface_vars: [tcwv, msnlp, u10, v10, t2m]
-  pressure_levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
+  pressure_vars: [specific_humidity, temperature, u_component_of_wind, v_component_of_wind, geopotential]
+  surface_vars: [total_column_water_vapour, mean_sea_level_pressure, 10m_u_component_of_wind, 10m_v_component_of_wind, 2m_temperature]
+  pressure_levels: [250, 500, 850]
 
 model:
   preset: mini
-  window_size: 6
-  embed_dim: 384
+  window_size: 8
+  embed_dim: 256
   num_heads: 6
   depth_pre: 1
   depth_mid: 6

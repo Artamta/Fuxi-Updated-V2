@@ -11,7 +11,7 @@
   "test_end": "2018-06-30",
   "history_steps": 2,
   "max_epochs": 5,
-  "max_iters": null,
+  "max_iters": 100,
   "batch_size": 1,
   "num_workers": 4,
   "patience": 3,
@@ -20,7 +20,7 @@
   "beta1": 0.9,
   "beta2": 0.95,
   "preset": "paper",
-  "embed_dim": 768,
+  "embed_dim": 1536,
   "window_size": 8,
   "drop_path_rate": 0.2,
   "num_heads": 8,
@@ -32,8 +32,9 @@
   "use_checkpoint": true,
   "output_root": "test-run-pretrain/cascade",
   "exp_name": "stage_short",
-  "resume": "test-run-pretrain/autoreg/ar_local_smoke/best.pt",
+  "resume": null,
   "seed": 42,
+  "device": "cuda:0",
   "fp16": true,
   "gpus": null,
   "tensorboard": true,
@@ -52,18 +53,8 @@
     "total_column_water_vapour"
   ],
   "pressure_levels": [
-    50,
-    100,
-    150,
-    200,
-    250,
-    300,
-    400,
-    500,
-    600,
-    700,
     850,
-    925,
-    1000
+    500,
+    250
   ]
 }

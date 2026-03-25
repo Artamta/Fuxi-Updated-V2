@@ -179,6 +179,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--exp-name", type=str, default="paper_zarr")
     p.add_argument("--resume", type=str, default=None)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--device", type=str, default="auto",
+                   help="Device: 'cuda:0', 'cuda:1', 'cpu', or 'auto' (default)")
     p.add_argument("--fp16", action="store_true")
     p.add_argument("--gpus", type=int, default=None)
     p.add_argument("--tensorboard", action="store_true")
@@ -216,9 +218,24 @@ def set_seeds(seed: int) -> None:
     np.random.seed(seed)
 
 
-def select_device(enable_fp16: bool) -> Tuple[torch.device, bool]:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def select_device(device_str: Optional[str], enable_fp16: bool) -> Tuple[torch.device, bool]:
+    """Select device; handle MIG/GPU detection gracefully."""
+    if device_str and device_str.lower() != "auto":
+        device = torch.device(device_str)
+    else:
+        # Auto-detect: prefer cuda:0, fallback to CPU
+        if torch.cuda.is_available():
+            try:
+                # Try to access device 0 directly to avoid MIG issues
+                torch.cuda.get_device_properties(0)
+                device = torch.device("cuda:0")
+            except Exception:
+                print("  Warning: CUDA available but device access failed (MIG mode?); using CPU")
+                device = torch.device("cpu")
+        else:
+            device = torch.device("cpu")
     use_fp16 = enable_fp16 and device.type == "cuda"
+    print(f"Device: {device}  (FP16={use_fp16})")
     return device, use_fp16
 
 
@@ -411,7 +428,7 @@ def main():
     with open(os.path.join(run_dir, "config.json"), "w") as f:
         json.dump(vars(args), f, indent=2, default=str)
 
-    device, use_fp16 = select_device(args.fp16)
+    device, use_fp16 = select_device(args.device, args.fp16)
     writer = setup_tensorboard(run_dir, args.tensorboard)
 
     # ---- Data ----

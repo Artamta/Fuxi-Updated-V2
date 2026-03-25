@@ -1,0 +1,85 @@
+{
+  "zarr_store": "/home/bedartha/public/datasets/for_model_development/weatherbench2/era5/1979-2022_01_10-6h-240x121_equiangular_with_poles_conservative_MWE.zarr",
+  "train_start": "1979-01-01",
+  "train_end": "2018-12-31",
+  "val_start": "2019-01-01",
+  "val_end": "2020-12-31",
+  "test_start": "2021-01-01",
+  "test_end": "2022-12-31",
+  "history_steps": 2,
+  "stats_samples": 256,
+  "pressure_vars": [
+    "temperature",
+    "geopotential",
+    "specific_humidity",
+    "u_component_of_wind",
+    "v_component_of_wind"
+  ],
+  "surface_vars": [
+    "t2m",
+    "u10",
+    "v20",
+    "mslp",
+    "tcwv"
+  ],
+  "pressure_levels": [
+    850,
+    500,
+    250
+  ],
+  "embed_dim": 256,
+  "num_heads": 8,
+  "window_size": 8,
+  "depth_pre": 1,
+  "depth_mid": 4,
+  "depth_post": 1,
+  "mlp_ratio": 4.0,
+  "drop_path_rate": 0.2,
+  "use_checkpoint": false,
+  "batch_size": 1,
+  "accum_steps": 1,
+  "max_epochs": 2,
+  "max_iters": 50,
+  "patience": 15,
+  "num_workers": 2,
+  "lr": 0.00025,
+  "weight_decay": 0.1,
+  "beta1": 0.9,
+  "beta2": 0.95,
+  "grad_clip": 1.0,
+  "amp": "bf16",
+  "loss": "l1",
+  "runs_dir": "Models_paper/pretrain",
+  "exp_name": null,
+  "resume": null,
+  "seed": 42,
+  "device": "auto",
+  "run_test_eval": false,
+  "plot_var_indices": [
+    0,
+    10,
+    19
+  ],
+  "resolved_pressure_vars": [
+    "temperature",
+    "geopotential",
+    "specific_humidity",
+    "u_component_of_wind",
+    "v_component_of_wind"
+  ],
+  "resolved_surface_vars": [
+    "2m_temperature",
+    "10m_u_component_of_wind",
+    "10m_v_component_of_wind",
+    "surface_pressure",
+    "total_column_water_vapour"
+  ],
+  "channels": 20,
+  "spatial_shape": [
+    121,
+    240
+  ],
+  "num_parameters": 8363632,
+  "world_size": 1,
+  "effective_batch_size": 1
+}
