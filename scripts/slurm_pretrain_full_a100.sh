@@ -11,19 +11,16 @@
 
 set -euo pipefail
 
-ROOT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/slurm_common.sh"
+
+ROOT_DIR=$(slurm_root)
 mkdir -p "${ROOT_DIR}/logs"
 cd "${ROOT_DIR}"
 
-source /apps/compilers/anaconda3-2023.3/etc/profile.d/conda.sh
-conda activate weather_forecast
+slurm_activate_conda
 
 ZARR_STORE="${ZARR_STORE:-/home/bedartha/public/datasets/for_model_development/weatherbench2/era5/1979-2022_01_10-6h-240x121_equiangular_with_poles_conservative_MWE.zarr}"
-
-if [ ! -d "${ZARR_STORE}" ]; then
-  echo "ERROR: zarr store not found: ${ZARR_STORE}"
-  exit 1
-fi
+slurm_require_zarr "${ZARR_STORE}"
 
 EMBED_DIM="${EMBED_DIM:-1536}"
 NUM_HEADS="${NUM_HEADS:-8}"
@@ -55,24 +52,10 @@ if [ -n "${RESUME_CKPT:-}" ]; then
   RESUME_FLAG="--resume ${RESUME_CKPT}"
 fi
 
-NGPUS="${SLURM_GPUS_ON_NODE:-}"
-if [ -z "${NGPUS}" ]; then
-  NGPUS=$(python -c "import torch; print(torch.cuda.device_count())")
-fi
-if [ "${NGPUS}" -lt 1 ]; then
-  echo "ERROR: no GPUs visible on this node."
-  exit 1
-fi
+NGPUS=$(slurm_detect_gpus)
+MASTER_PORT=$(slurm_pick_port)
 
-MASTER_PORT=$((10000 + (RANDOM % 50000)))
-
-export OMP_NUM_THREADS=4
-export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
-export NCCL_ASYNC_ERROR_HANDLING=1
-export TORCH_NCCL_BLOCKING_WAIT=1
-export NCCL_TIMEOUT="${NCCL_TIMEOUT:-1800}"
-export NCCL_IB_DISABLE="${NCCL_IB_DISABLE:-1}"
-export PYTHONFAULTHANDLER=1
+slurm_export_nccl_defaults
 
 echo "============================================================"
 echo "FuXi pretraining full run (A100)"

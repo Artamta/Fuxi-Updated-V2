@@ -25,6 +25,30 @@ except ImportError:
     from swin import trunc_normal_
 
 
+# Simple presets to avoid hunting for the right hyperparams.
+PRESETS = {
+    "paper": dict(
+        embed_dim=1536,
+        num_heads=8,
+        window_size=8,
+        depth_pre=2,
+        depth_mid=48,
+        depth_post=2,
+        drop_path_rate=0.2,
+    ),
+    # Lightweight and faster; good for sanity checks.
+    "mini": dict(
+        embed_dim=384,
+        num_heads=6,
+        window_size=6,
+        depth_pre=1,
+        depth_mid=6,
+        depth_post=1,
+        drop_path_rate=0.05,
+    ),
+}
+
+
 class FuXi(nn.Module):
     """
     FuXi weather forecasting model.
@@ -238,3 +262,34 @@ class FuXi(nn.Module):
             x_prev = x_curr
             x_curr = pred
         return predictions
+
+
+def make_fuxi(
+    preset: str = "paper",
+    num_variables: int = 70,
+    input_height: int = 721,
+    input_width: int = 1440,
+    patch_size=(2, 4, 4),
+    use_checkpoint: bool = False,
+    mc_dropout: float = 0.0,
+    **overrides,
+) -> FuXi:
+    """Factory helper to build FuXi with a named preset.
+
+    Args:
+        preset: one of PRESETS keys ("paper", "mini").
+        overrides: any FuXi __init__ kwargs to tweak the preset.
+    """
+    if preset not in PRESETS:
+        raise ValueError(f"Unknown preset '{preset}'. Valid: {list(PRESETS)}")
+
+    cfg = {**PRESETS[preset], **overrides}
+    return FuXi(
+        num_variables=num_variables,
+        input_height=input_height,
+        input_width=input_width,
+        patch_size=patch_size,
+        use_checkpoint=use_checkpoint,
+        mc_dropout=mc_dropout,
+        **cfg,
+    )

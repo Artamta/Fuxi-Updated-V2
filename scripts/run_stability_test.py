@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
 """
-Run a long-rollout stability test for a FuXi checkpoint.
+One clean stability script for emb_768.
 
-Simple behavior:
-1) Pick checkpoint:
-    - default: best checkpoint for emb_768
-    - random mode: pick random checkpoint if --random true
-    - override: --checkpoint /path/to/file.pt
-2) Reuse saved climatology:
-    - tries local results/climatology_cache/emb_<dim>/climo_*.npz
-    - if missing and --copy-climo-from-prev true, copies from fuxi_paper_prev
-3) Run src.evaluation.evaluate_checkpoint.
-4) Write compact stability outputs:
-    - stability_summary.json
-    - stability_rmse_acc_curve.png
+Outputs:
+- summary.json
+- metrics_per_lead.csv
+- stability_summary.json
+- mean_rmse_acc_climatology_plot.(png|pdf)
 """
 
 from __future__ import annotations
@@ -23,13 +16,11 @@ import csv
 import json
 import os
 import random
-import re
-import shutil
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib
 matplotlib.use("Agg")
@@ -37,40 +28,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-DEFAULT_PREV_REPO = Path("/home/raj.ayush/fuxi-final/fuxi_paper_prev")
-
-
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
-
-
-def find_checkpoints(root: Path) -> List[Path]:
-    candidates: List[Path] = []
-    for base in (root / "checkpoints", root / "results"):
-        if not base.exists():
-            continue
-        candidates.extend(base.rglob("best.pt"))
-        candidates.extend(base.rglob("last.pt"))
-    # Stable ordering for reproducibility in latest/random behavior
-    return sorted({p.resolve() for p in candidates})
-
-
-def choose_checkpoint(mode: str, all_ckpts: List[Path], explicit: str | None) -> Path:
-    if explicit:
-        ckpt = Path(explicit).expanduser().resolve()
-        if not ckpt.is_file():
-            raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
-        return ckpt
-
-    if not all_ckpts:
-        raise FileNotFoundError("No checkpoints found under checkpoints/ or results/")
-
-    if mode == "latest":
-        return max(all_ckpts, key=lambda p: p.stat().st_mtime)
-    if mode == "random":
-        return random.choice(all_ckpts)
-
-    raise ValueError(f"Unsupported mode: {mode}")
 
 
 def parse_bool(value: str) -> bool:
@@ -82,100 +41,45 @@ def parse_bool(value: str) -> bool:
     raise argparse.ArgumentTypeError("Expected true/false")
 
 
-def infer_embedding_dim(ckpt: Path) -> int | None:
-    m = re.search(r"emb_(\d+)", str(ckpt))
-    if m:
-        return int(m.group(1))
-    return None
+def find_768_checkpoints(root: Path) -> List[Path]:
+    ckpts: List[Path] = []
+    for base in (root / "checkpoints", root / "results"):
+        if base.exists():
+            ckpts.extend(base.rglob("best.pt"))
+    return sorted([p.resolve() for p in ckpts if "emb_768" in str(p)])
 
 
-def find_local_climo_files(root: Path, emb_dim: int) -> List[Path]:
-    climo_dir = root / "results" / "climatology_cache" / f"emb_{emb_dim}"
-    if not climo_dir.exists():
-        return []
-    return sorted(climo_dir.glob("climo_*.npz"))
-
-
-def copy_climo_from_prev_repo(root: Path, prev_repo: Path, emb_dim: int) -> List[Path]:
-    src_dir = prev_repo / "Models_paper" / "pretrain" / f"emb_{emb_dim}"
-    if not src_dir.exists():
-        return []
-
-    src_files = sorted(src_dir.glob("climo_*.npz"))
-    if not src_files:
-        return []
-
-    dest_dir = root / "results" / "climatology_cache" / f"emb_{emb_dim}"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-
-    copied: List[Path] = []
-    for src in src_files:
-        dest = dest_dir / src.name
-        if not dest.exists():
-            shutil.copy2(src, dest)
-        copied.append(dest)
-    return copied
-
-
-def choose_checkpoint_simple(
-    all_ckpts: List[Path],
-    explicit: str | None,
-    random_mode: bool,
-    preferred_embedding: int,
-) -> Path:
+def choose_checkpoint(root: Path, explicit: Optional[str], random_mode: bool) -> Path:
     if explicit:
         ckpt = Path(explicit).expanduser().resolve()
         if not ckpt.is_file():
             raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
         return ckpt
 
-    if not all_ckpts:
-        raise FileNotFoundError("No checkpoints found under checkpoints/ or results/")
-
+    candidates = find_768_checkpoints(root)
+    if not candidates:
+        raise FileNotFoundError("No emb_768 best.pt checkpoint found under checkpoints/ or results/")
     if random_mode:
-        return random.choice(all_ckpts)
-
-    pref = [p for p in all_ckpts if p.name == "best.pt" and f"emb_{preferred_embedding}" in str(p)]
-    if pref:
-        return max(pref, key=lambda p: p.stat().st_mtime)
-
-    best_any = [p for p in all_ckpts if p.name == "best.pt"]
-    if best_any:
-        return max(best_any, key=lambda p: p.stat().st_mtime)
-
-    return max(all_ckpts, key=lambda p: p.stat().st_mtime)
+        return random.choice(candidates)
+    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
-def resolve_climo_cache(args: argparse.Namespace, root: Path, ckpt: Path, outdir: Path) -> Path | None:
-    if args.climo_cache:
-        p = Path(args.climo_cache).expanduser().resolve()
+def choose_climo_cache(root: Path, explicit: Optional[str], use_saved: bool) -> Optional[Path]:
+    if explicit:
+        p = Path(explicit).expanduser().resolve()
         if not p.is_file():
             raise FileNotFoundError(f"Climatology cache not found: {p}")
         return p
-
-    if not args.use_saved_climo:
+    if not use_saved:
         return None
 
-    emb_dim = infer_embedding_dim(ckpt)
-    if emb_dim is None:
-        return None
-
-    local = find_local_climo_files(root, emb_dim)
-    if not local and args.copy_climo_from_prev:
-        prev_repo = Path(args.prev_repo).expanduser().resolve()
-        local = copy_climo_from_prev_repo(root, prev_repo, emb_dim)
-
+    local = sorted((root / "results" / "climatology_cache" / "emb_768").glob("climo_*.npz"))
     if not local:
         return None
-
-    chosen = max(local, key=lambda p: p.stat().st_mtime)
-    snapshot = outdir / chosen.name
-    if not snapshot.exists():
-        shutil.copy2(chosen, snapshot)
-    return snapshot
+    return max(local, key=lambda p: p.stat().st_mtime).resolve()
 
 
-def run_eval(root: Path, ckpt: Path, outdir: Path, args: argparse.Namespace, climo_cache: Path | None) -> None:
+def run_eval(root: Path, ckpt: Path, outdir: Path, args: argparse.Namespace, climo_cache: Optional[Path]) -> None:
     cmd = [
         sys.executable,
         "-u",
@@ -204,13 +108,12 @@ def run_eval(root: Path, ckpt: Path, outdir: Path, args: argparse.Namespace, cli
         "--plot-vars",
         args.plot_vars,
     ]
-
     if climo_cache is not None:
         cmd.extend(["--climo-cache", str(climo_cache)])
 
     print("Running evaluation:")
     print(" ".join(cmd))
-    env = dict(**os.environ)
+    env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
     subprocess.run(cmd, cwd=root, env=env, check=True)
 
@@ -229,78 +132,101 @@ def load_mean_curves(metrics_csv: Path) -> Tuple[np.ndarray, np.ndarray, np.ndar
             by_step[step]["acc"].append(float(row["acc"]))
 
     steps = sorted(by_step.keys())
-    rmse = np.array([np.mean(by_step[s]["rmse"]) for s in steps], dtype=np.float64)
-    acc = np.array([np.mean(by_step[s]["acc"]) for s in steps], dtype=np.float64)
     lead_days = np.array(steps, dtype=np.float64) * 6.0 / 24.0
-    return lead_days, rmse, acc
+    rmse_mean = np.array([np.mean(by_step[s]["rmse"]) for s in steps], dtype=np.float64)
+    acc_mean = np.array([np.mean(by_step[s]["acc"]) for s in steps], dtype=np.float64)
+    return lead_days, rmse_mean, acc_mean
 
 
-def diagnose_stability(acc: np.ndarray) -> str:
-    tail_n = min(10, len(acc))
-    tail = float(np.mean(acc[-tail_n:]))
-    if tail > 0.3:
-        return "stable_skillful"
-    if tail > 0.0:
-        return "degrading_but_reasonable"
-    if tail > -0.2:
-        return "climatology_like_or_weak_skill"
-    return "unstable_or_phase_flipped"
+def climatology_rmse_baseline(sample_dir: Path, climo_cache: Optional[Path]) -> Optional[np.ndarray]:
+    if climo_cache is None or not climo_cache.is_file() or not sample_dir.exists():
+        return None
+
+    with np.load(climo_cache) as cdata:
+        if "climatology" not in cdata:
+            return None
+        clim = cdata["climatology"].astype(np.float32)
+
+    curves: List[np.ndarray] = []
+    for sample in sorted(sample_dir.glob("sample_*.npz")):
+        with np.load(sample, allow_pickle=True) as d:
+            truth = d["truth"].astype(np.float32)
+        err = clim[None, ...] - truth
+        rmse_curve = np.sqrt(np.mean(err * err, axis=(1, 2, 3)))
+        curves.append(rmse_curve)
+
+    if not curves:
+        return None
+    return np.mean(np.stack(curves, axis=0), axis=0)
 
 
-def write_outputs(
+def save_plot(outdir: Path, lead_days: np.ndarray, rmse_mean: np.ndarray, acc_mean: np.ndarray, rmse_climo: Optional[np.ndarray]) -> None:
+    fig, ax1 = plt.subplots(figsize=(10.5, 5.3))
+
+    model_rmse = ax1.plot(lead_days, rmse_mean, color="#1f77b4", linewidth=2.3, label="Mean RMSE (model)")
+    if rmse_climo is not None and len(rmse_climo) == len(lead_days):
+        climo_rmse = ax1.plot(
+            lead_days,
+            rmse_climo,
+            color="#2ca02c",
+            linewidth=2.0,
+            linestyle="--",
+            label="RMSE (climatology baseline)",
+        )
+    else:
+        climo_rmse = []
+    ax1.set_xlabel("Lead Time (days)")
+    ax1.set_ylabel("RMSE", color="#1f77b4")
+    ax1.tick_params(axis="y", labelcolor="#1f77b4")
+    ax1.grid(alpha=0.3)
+
+    ax2 = ax1.twinx()
+    model_acc = ax2.plot(lead_days, acc_mean, color="#d62728", linewidth=2.3, label="Mean ACC (model)")
+    ax2.axhline(0.0, color="#d62728", linestyle=":", linewidth=1.6, alpha=0.9)
+    ax2.set_ylabel("ACC", color="#d62728")
+    ax2.tick_params(axis="y", labelcolor="#d62728")
+
+    handles = model_rmse + climo_rmse + model_acc + [plt.Line2D([0], [0], color="#d62728", linestyle=":", linewidth=1.6)]
+    labels = [h.get_label() for h in (model_rmse + climo_rmse + model_acc)] + ["ACC climatology reference (0)"]
+    ax1.legend(handles, labels, loc="best", frameon=False)
+
+    plt.title("emb_768 Stability: Mean RMSE / Mean ACC vs Lead Time")
+    fig.tight_layout()
+    fig.savefig(outdir / "mean_rmse_acc_climatology_plot.png", dpi=260)
+    fig.savefig(outdir / "mean_rmse_acc_climatology_plot.pdf")
+    plt.close(fig)
+
+
+def save_summary(
     outdir: Path,
     ckpt: Path,
+    climo_cache: Optional[Path],
     lead_days: np.ndarray,
-    rmse: np.ndarray,
-    acc: np.ndarray,
-    climo_cache: Path | None,
+    rmse_mean: np.ndarray,
+    acc_mean: np.ndarray,
+    rmse_climo: Optional[np.ndarray],
 ) -> None:
-    rmse_growth = float(rmse[-1] - rmse[0])
-    acc_drop = float(acc[0] - acc[-1])
-    tail_n = min(10, len(acc))
-    acc_tail = float(np.mean(acc[-tail_n:]))
-
     summary = {
         "checkpoint": str(ckpt),
-        "climo_cache_used": str(climo_cache) if climo_cache is not None else None,
+        "climo_cache_used": str(climo_cache) if climo_cache else None,
         "lead_days_max": float(lead_days[-1]),
-        "mean_rmse_step1": float(rmse[0]),
-        "mean_rmse_last": float(rmse[-1]),
-        "mean_rmse_growth": rmse_growth,
-        "mean_acc_step1": float(acc[0]),
-        "mean_acc_last": float(acc[-1]),
-        "mean_acc_drop": acc_drop,
-        "mean_acc_tail_last10": acc_tail,
-        "stability_label": diagnose_stability(acc),
-        "note": "Tail ACC near 0 suggests climatology-like behavior; strongly negative suggests unstable forecast.",
+        "mean_rmse_step1": float(rmse_mean[0]),
+        "mean_rmse_last": float(rmse_mean[-1]),
+        "mean_rmse_growth": float(rmse_mean[-1] - rmse_mean[0]),
+        "mean_acc_step1": float(acc_mean[0]),
+        "mean_acc_last": float(acc_mean[-1]),
+        "mean_acc_drop": float(acc_mean[0] - acc_mean[-1]),
+        "climatology_rmse_last": float(rmse_climo[-1]) if rmse_climo is not None else None,
     }
     (outdir / "stability_summary.json").write_text(json.dumps(summary, indent=2))
 
-    plt.figure(figsize=(10, 4.8))
-    plt.plot(lead_days, rmse, label="Mean RMSE", linewidth=2)
-    plt.plot(lead_days, acc, label="Mean ACC", linewidth=2)
-    plt.axhline(0.0, color="black", linewidth=1, alpha=0.5)
-    plt.xlabel("Lead time (days)")
-    plt.ylabel("Metric value")
-    plt.title("Long-rollout stability: RMSE and ACC over lead time")
-    plt.grid(alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(outdir / "stability_rmse_acc_curve.png", dpi=220)
-    plt.close()
-
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a long-rollout checkpoint stability test")
-    parser.add_argument("--checkpoint", type=str, default=None, help="Explicit checkpoint path")
-    parser.add_argument("--random", type=parse_bool, default=False, help="true/false")
-    parser.add_argument("--preferred-embedding", type=int, default=768, help="Used when random=false")
-    parser.add_argument("--mode", choices=["random", "latest"], default=None, help="Compatibility; random mode if set to random")
-
-    parser.add_argument("--use-saved-climo", type=parse_bool, default=True, help="true/false")
-    parser.add_argument("--copy-climo-from-prev", type=parse_bool, default=True, help="true/false")
-    parser.add_argument("--prev-repo", type=str, default=str(DEFAULT_PREV_REPO))
-    parser.add_argument("--climo-cache", type=str, default=None, help="Explicit climo .npz path")
+    parser = argparse.ArgumentParser(description="Simple emb_768 stability run + plot")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Optional explicit checkpoint path")
+    parser.add_argument("--random", type=parse_bool, default=False, help="true/false, pick random emb_768 checkpoint")
+    parser.add_argument("--use-saved-climatology", type=parse_bool, default=True, help="true/false")
+    parser.add_argument("--climo-cache", type=str, default=None, help="Optional explicit climatology cache .npz")
 
     parser.add_argument("--rollout-steps", type=int, default=120, help="120 steps = 30 days")
     parser.add_argument("--batch-size", type=int, default=2)
@@ -322,39 +248,33 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     root = repo_root()
-    all_ckpts = find_checkpoints(root)
 
-    random_mode = bool(args.random) or args.mode == "random"
-    ckpt = choose_checkpoint_simple(
-        all_ckpts=all_ckpts,
-        explicit=args.checkpoint,
-        random_mode=random_mode,
-        preferred_embedding=int(args.preferred_embedding),
-    )
+    ckpt = choose_checkpoint(root, args.checkpoint, bool(args.random))
+    climo_cache = choose_climo_cache(root, args.climo_cache, bool(args.use_saved_climatology))
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     outdir = root / "results" / f"stability_run_{ts}"
     outdir.mkdir(parents=True, exist_ok=True)
 
-    climo_cache = resolve_climo_cache(args, root, ckpt, outdir)
-
     print(f"Repository root: {root}")
     print(f"Selected checkpoint: {ckpt}")
-    print(f"Random mode: {random_mode}")
     print(f"Climatology cache: {climo_cache if climo_cache else 'auto-compute'}")
     print(f"Output directory: {outdir}")
 
     run_eval(root, ckpt, outdir, args, climo_cache)
 
-    lead_days, rmse, acc = load_mean_curves(outdir / "metrics_per_lead.csv")
-    write_outputs(outdir, ckpt, lead_days, rmse, acc, climo_cache)
+    lead_days, rmse_mean, acc_mean = load_mean_curves(outdir / "metrics_per_lead.csv")
+    rmse_climo = climatology_rmse_baseline(outdir / "prediction_samples", climo_cache)
+
+    save_plot(outdir, lead_days, rmse_mean, acc_mean, rmse_climo)
+    save_summary(outdir, ckpt, climo_cache, lead_days, rmse_mean, acc_mean, rmse_climo)
 
     print("Done.")
-    print(f"Main outputs:")
+    print("Main outputs:")
     print(f"  {outdir / 'summary.json'}")
     print(f"  {outdir / 'metrics_per_lead.csv'}")
     print(f"  {outdir / 'stability_summary.json'}")
-    print(f"  {outdir / 'stability_rmse_acc_curve.png'}")
+    print(f"  {outdir / 'mean_rmse_acc_climatology_plot.png'}")
 
 
 if __name__ == "__main__":

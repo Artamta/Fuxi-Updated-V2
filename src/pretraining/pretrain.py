@@ -8,7 +8,6 @@ Scope:
 - Mixed precision, gradient clipping, checkpointing
 - Validation-driven best checkpoint
 
-No rollout curriculum or post-training/fine-tuning logic is included here.
 """
 
 from __future__ import annotations

@@ -1,0 +1,41 @@
+data:
+  zarr_store: /path/to/weatherbench.zarr
+  train_start: 1979-01-01
+  train_end: 1979-12-31
+  val_start: 2016-01-01
+  val_end: 2016-06-30
+  test_start: 2018-01-01
+  test_end: 2018-06-30
+  history_steps: 2
+  pressure_vars: [q, t, u, v, z]
+  surface_vars: [tcwv, msnlp, u10, v10, t2m]
+  pressure_levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
+
+model:
+  preset: mini
+  window_size: 6
+  embed_dim: 384
+  num_heads: 6
+  depth_pre: 1
+  depth_mid: 6
+  depth_post: 1
+  drop_path_rate: 0.05
+
+train:
+  max_epochs: 10
+  batch_size: 1
+  num_workers: 4
+  lr: 0.00025
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  patience: 5
+  fp16: true
+
+output:
+  output_root: results
+  exp_name: mini_sanity
+  seed: 42
+
+logging:
+  tensorboard: true
