@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=test
 #SBATCH --partition=GPU-AI
-#SBATCH --gres=gpu:2
-#SBATCH --cpus-per-task=12
-#SBATCH --mem=64G
-#SBATCH --time=04:00:00
+#SBATCH --gres=gpu:8
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=256G
+#SBATCH --time=7-24:00:00
 #SBATCH -o logs/fuxi_pre_smoke_%j.out
 #SBATCH -e logs/fuxi_pre_smoke_%j.err
 
@@ -46,7 +46,7 @@ fi
 # -------------------------------
 # GPU + NCCL DEBUG
 # -------------------------------
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 export NCCL_DEBUG=INFO
 
 echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
@@ -69,7 +69,7 @@ nvidia-smi
 # -------------------------------
 accelerate launch \
   --multi_gpu \
-  --num_processes=2 \
+  --num_processes=8 \
   --num_machines=1 \
   --machine_rank=0 \
   --main_process_port=29501 \
@@ -78,24 +78,24 @@ accelerate launch \
   -m src.pretraining.pretrain \
   --zarr-store "${ZARR_STORE}" \
   --train-start 1979-01-01 \
-  --train-end 1979-01-10 \
-  --val-start 2016-01-01 \
-  --val-end 2016-01-03 \
-  --test-start 2018-01-01 \
-  --test-end 2018-01-03 \
-  --exp-name "smoke_run" \
+  --train-end 2019-12-31 \
+  --val-start 2020-01-01 \
+  --val-end 2020-12-31 \
+  --test-start 2021-01-01 \
+  --test-end 2022-12-31 \
+  --exp-name "scaling-test" \
   --runs-dir Models_paper/pretrain \
-  --embed-dim 256 \
+  --embed-dim 1536 \
   --num-heads 8 \
   --window-size 8 \
-  --depth-pre 2 \
-  --depth-mid 8 \
-  --depth-post 2 \
+  --depth-pre 16 \
+  --depth-mid 16 \
+  --depth-post 16 \
   --batch-size 1 \
   --accum-steps 1 \
   --max-epochs 4 \
-  --max-iters 100 \
-  --patience 2 \
+  --max-iters 40000 \
+  --patience 5 \
   --num-workers 10 \
   --device cuda \
   --amp bf16
