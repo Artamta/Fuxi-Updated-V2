@@ -1,8 +1,0 @@
-{
-  "best_val_loss": 0.5455587108929952,
-  "global_step": 15,
-  "epochs_ran": 1,
-  "num_parameters": 1776096,
-  "epoch_time_sec_mean": 4.136996507644653,
-  "epoch_time_sec_last": 4.136996507644653
-}
