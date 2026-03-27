@@ -69,11 +69,16 @@ slurm_log_header() {
 
 # Export sane NCCL/OMP defaults (can be overridden).
 slurm_export_nccl_defaults() {
-  export OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
-  export NCCL_DEBUG=${NCCL_DEBUG:-WARN}
-  export NCCL_ASYNC_ERROR_HANDLING=${NCCL_ASYNC_ERROR_HANDLING:-1}
-  export TORCH_NCCL_BLOCKING_WAIT=${TORCH_NCCL_BLOCKING_WAIT:-1}
-  export NCCL_TIMEOUT=${NCCL_TIMEOUT:-1800}
-  export NCCL_IB_DISABLE=${NCCL_IB_DISABLE:-1}
-  export PYTHONFAULTHANDLER=${PYTHONFAULTHANDLER:-1}
+  export OMP_NUM_THREADS=8
+  export MKL_NUM_THREADS=8
+
+  export NCCL_DEBUG=WARN
+  export NCCL_ASYNC_ERROR_HANDLING=1
+  export TORCH_NCCL_BLOCKING_WAIT=1
+  export NCCL_TIMEOUT=1800
+
+  export NCCL_IB_DISABLE=0
+  export NCCL_SOCKET_IFNAME=^lo,docker0
+
+  export PYTHONFAULTHANDLER=1
 }

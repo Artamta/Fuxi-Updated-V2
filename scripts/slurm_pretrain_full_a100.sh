@@ -1,21 +1,28 @@
 #!/bin/bash
 #SBATCH --job-name=fuxi_pre_full
 #SBATCH --partition=GPU-AI
-#SBATCH --gres=gpu:4
-#SBATCH --cpus-per-task=32
-#SBATCH --mem=180G
+#SBATCH --gres=gpu:8
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=256G
 #SBATCH --time=7-00:00:00
-#SBATCH --exclude=cn3,cn15
 #SBATCH -o logs/fuxi_pre_full_%j.out
 #SBATCH -e logs/fuxi_pre_full_%j.err
 
 set -euo pipefail
 
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/slurm_common.sh"
+source "${SLURM_SUBMIT_DIR}/scripts/slurm_common.sh"
 
 ROOT_DIR=$(slurm_root)
 mkdir -p "${ROOT_DIR}/logs"
 cd "${ROOT_DIR}"
+
+NUM_WORKERS=8
+ACCUM_STEPS=8
+NUM_HEADS=12
+BATCH_SIZE=2  
+
+export OMP_NUM_THREADS=8
+export MKL_NUM_THREADS=8
 
 slurm_activate_conda
 
@@ -23,23 +30,20 @@ ZARR_STORE="${ZARR_STORE:-/home/bedartha/public/datasets/for_model_development/w
 slurm_require_zarr "${ZARR_STORE}"
 
 EMBED_DIM="${EMBED_DIM:-1536}"
-NUM_HEADS="${NUM_HEADS:-8}"
 WINDOW="${WINDOW:-8}"
-DEPTH_PRE="${DEPTH_PRE:-2}"
-DEPTH_MID="${DEPTH_MID:-44}"
-DEPTH_POST="${DEPTH_POST:-2}"
+DEPTH_PRE="${DEPTH_PRE:-16}"
+DEPTH_MID="${DEPTH_MID:-16}"
+DEPTH_POST="${DEPTH_POST:-16}"
 
-BATCH_SIZE="${BATCH_SIZE:-2}"
 ACCUM_STEPS="${ACCUM_STEPS:-1}"
 MAX_EPOCHS="${MAX_EPOCHS:-50}"
-MAX_ITERS="${MAX_ITERS:-40000}"
+MAX_ITERS="${MAX_ITERS:-100000}"
 PATIENCE="${PATIENCE:-15}"
 LR="${LR:-2.5e-4}"
 WEIGHT_DECAY="${WEIGHT_DECAY:-0.1}"
 BETA1="${BETA1:-0.9}"
 BETA2="${BETA2:-0.95}"
 DROP_PATH="${DROP_PATH:-0.2}"
-NUM_WORKERS="${NUM_WORKERS:-2}"
 
 RUNS_DIR="${RUNS_DIR:-Models_paper/pretrain}"
 EXP_NAME="${EXP_NAME:-emb_${EMBED_DIM}}"
@@ -80,8 +84,8 @@ accelerate launch \
   --module src.pretraining.pretrain \
   --zarr-store "${ZARR_STORE}" \
   --train-start 1979-01-01 \
-  --train-end 2018-12-31 \
-  --val-start 2019-01-01 \
+  --train-end 2019-12-31 \
+  --val-start 2020-01-01 \
   --val-end 2020-12-31 \
   --test-start 2021-01-01 \
   --test-end 2022-12-31 \
@@ -106,6 +110,7 @@ accelerate launch \
   --beta1 ${BETA1} \
   --beta2 ${BETA2} \
   --device cuda \
+  --grad-clip 1.0 \
   --amp bf16 \
   ${RESUME_FLAG}
 

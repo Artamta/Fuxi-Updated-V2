@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=test
+#SBATCH --job-name=2048
 #SBATCH --partition=GPU-AI
-#SBATCH --gres=gpu:8
+#SBATCH --gres=gpu:6
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
 #SBATCH --time=7-24:00:00
@@ -55,7 +55,6 @@ echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 # INFO
 # -------------------------------
 echo "============================================================"
-echo "FuXi pretraining smoke test (2 GPUs)"
 echo "Host        : $(hostname)"
 echo "Working Dir : $(pwd)"
 echo "Experiment  : smoke_$(date +%Y%m%d_%H%M%S)"
@@ -69,7 +68,7 @@ nvidia-smi
 # -------------------------------
 accelerate launch \
   --multi_gpu \
-  --num_processes=8 \
+  --num_processes=6 \
   --num_machines=1 \
   --machine_rank=0 \
   --main_process_port=29501 \
@@ -85,18 +84,19 @@ accelerate launch \
   --test-end 2022-12-31 \
   --exp-name "scaling-test" \
   --runs-dir Models_paper/pretrain \
-  --embed-dim 1536 \
-  --num-heads 8 \
+  --embed-dim 2048 \
+  --num-heads 32 \
   --window-size 8 \
-  --depth-pre 16 \
-  --depth-mid 16 \
-  --depth-post 16 \
+  --depth-pre 8 \
+  --depth-mid 32 \
+  --depth-post 8 \
   --batch-size 1 \
   --accum-steps 1 \
-  --max-epochs 4 \
+  --max-epochs 50 \
   --max-iters 40000 \
   --patience 5 \
   --num-workers 10 \
+  --grad-clip 1.0 \
   --device cuda \
   --amp bf16
 

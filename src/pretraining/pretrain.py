@@ -842,6 +842,8 @@ def main() -> None:
             json.dump(config, f, indent=2)
 
     no_improve_epochs = 0
+    train_start_time = time.time()
+
     for epoch in range(start_epoch, args.max_epochs + 1):
         epoch_start = time.time()
 
@@ -873,6 +875,7 @@ def main() -> None:
         improved = val_loss < best_val_loss
         if improved:
             best_val_loss = val_loss
+            best_epoch = epoch   # NEW
             no_improve_epochs = 0
         else:
             no_improve_epochs += 1
@@ -880,6 +883,7 @@ def main() -> None:
         if accelerator.is_main_process:
             row = {
                 "epoch": epoch,
+                
                 "global_step": global_step,
                 "train_loss": train_loss,
                 "train_mae": train_mae,
@@ -933,14 +937,26 @@ def main() -> None:
         ckpt = torch.load(best_ckpt, map_location="cpu", weights_only=False)
         raw_model.load_state_dict(ckpt["model_state"])
 
+    total_time = time.time() - train_start_time
+
     metrics = {
         "best_val_loss": float(best_val_loss),
+        "best_epoch": int(best_epoch),
         "global_step": int(global_step),
         "epochs_ran": len(history_rows),
         "num_parameters": raw_model.count_parameters(),
+
+        # time metrics
         "epoch_time_sec_mean": float(np.mean(epoch_secs)) if epoch_secs else None,
         "epoch_time_sec_last": float(epoch_secs[-1]) if epoch_secs else None,
-    }
+        "total_time_hours": total_time / 3600,
+
+        # throughput
+        "steps_per_sec": global_step / total_time if total_time > 0 else None,
+
+        # hardware
+        "num_gpus": accelerator.num_processes,
+}
 
     if args.run_test_eval:
         test_loss, test_mae = evaluate(
