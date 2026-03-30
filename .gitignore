@@ -16,7 +16,7 @@ venv/
 # 🔹 Jupyter Notebooks
 # =========================
 .ipynb_checkpoints/
-*.ipynb
+
 
 # =========================
 # 🔹 Logs & Outputs
