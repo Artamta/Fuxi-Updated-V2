@@ -34,7 +34,7 @@ train:
   fp16: true
 
 output:
-  output_root: test-run-pretrain/cascade
+  output_root: results/cascade
   exp_name: stage_short
   seed: 42
 
