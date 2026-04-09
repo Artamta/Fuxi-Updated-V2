@@ -76,6 +76,7 @@ if [[ ! -f "${BASE_CKPT}" ]]; then
 fi
 
 export BASE_CKPT
+export PYTHON_BIN
 export CONFIG_SHORT="${CONFIG_SHORT:-configs/cascade_tiny_smoke_short.yaml}"
 export CONFIG_MEDIUM="${CONFIG_MEDIUM:-configs/cascade_tiny_smoke_medium.yaml}"
 export CONFIG_LONG="${CONFIG_LONG:-configs/cascade_tiny_smoke_long.yaml}"

@@ -13,6 +13,7 @@ CONFIG_MEDIUM=${CONFIG_MEDIUM:-"configs/cascade_medium.yaml"}
 CONFIG_LONG=${CONFIG_LONG:-"configs/cascade_long.yaml"}
 OUTPUT_ROOT=${OUTPUT_ROOT:-"results/cascade"}
 CKPT_NAME=${CKPT_NAME:-"best.pt"}
+PYTHON_BIN=${PYTHON_BIN:-"python"}
 
 # Override exp names if desired
 EXP_SHORT=${EXP_SHORT:-"stage_short"}
@@ -27,12 +28,17 @@ if [[ ! -f "$BASE_CKPT" ]]; then
   exit 1
 fi
 
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "ERROR: Python interpreter not found: $PYTHON_BIN" >&2
+  exit 1
+fi
+
 run_stage() {
   local cfg=$1
   local exp=$2
   local resume=$3
   echo "\n==> Stage: $exp"
-  python -u src/training/train.py \
+  "$PYTHON_BIN" -u -m src.training.train \
     --config "$cfg" \
     --exp-name "$exp" \
     --resume "$resume" \
