@@ -649,6 +649,12 @@ def resolve_spec_from_checkpoint(args: argparse.Namespace) -> Tuple[DataSpec, Di
             return val
         return cfg.get(name, default)
 
+    def cfg_num(name: str, default, cast):
+        val = cfg.get(name, default)
+        if val is None:
+            val = default
+        return cast(val)
+
     spec = DataSpec(
         zarr_store=pick("zarr_store", DEFAULT_ZARR_STORE),
         train_start=pick("train_start", "1979-01-01"),
@@ -661,14 +667,14 @@ def resolve_spec_from_checkpoint(args: argparse.Namespace) -> Tuple[DataSpec, Di
         surface_vars=pick("surface_vars", list(DEFAULT_SURFACE_VARS)),
         pressure_levels=pick("pressure_levels", list(DEFAULT_PRESSURE_LEVELS)),
         history_steps=int(pick("history_steps", 2)),
-        embed_dim=int(cfg.get("embed_dim", 1536)),
-        num_heads=int(cfg.get("num_heads", 8)),
-        window_size=int(cfg.get("window_size", 8)),
-        depth_pre=int(cfg.get("depth_pre", 2)),
-        depth_mid=int(cfg.get("depth_mid", 44)),
-        depth_post=int(cfg.get("depth_post", 2)),
-        mlp_ratio=float(cfg.get("mlp_ratio", 4.0)),
-        drop_path_rate=float(cfg.get("drop_path_rate", 0.2)),
+        embed_dim=cfg_num("embed_dim", 1536, int),
+        num_heads=cfg_num("num_heads", 8, int),
+        window_size=cfg_num("window_size", 8, int),
+        depth_pre=cfg_num("depth_pre", 2, int),
+        depth_mid=cfg_num("depth_mid", 44, int),
+        depth_post=cfg_num("depth_post", 2, int),
+        mlp_ratio=cfg_num("mlp_ratio", 4.0, float),
+        drop_path_rate=cfg_num("drop_path_rate", 0.2, float),
     )
     return spec, ckpt
 
