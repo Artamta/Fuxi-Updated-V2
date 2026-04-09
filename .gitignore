@@ -85,3 +85,5 @@ PRIVATE_*.md
 *.json
 *.log
 *.logs
+
+src/Weather-Bench/
