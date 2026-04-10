@@ -68,9 +68,9 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 
 # AR speed tuning knobs (can be overridden with --export at submission).
-export AR_BATCH_SIZE="${AR_BATCH_SIZE:-8}"
-export AR_NUM_WORKERS="${AR_NUM_WORKERS:-16}"
-export AR_PREFETCH_FACTOR="${AR_PREFETCH_FACTOR:-4}"
+export AR_BATCH_SIZE="${AR_BATCH_SIZE:-12}"
+export AR_NUM_WORKERS="${AR_NUM_WORKERS:-8}"
+export AR_PREFETCH_FACTOR="${AR_PREFETCH_FACTOR:-3}"
 export AR_EVAL_EVERY="${AR_EVAL_EVERY:-2}"
 export AR_SKIP_FINAL_TEST_EVAL="${AR_SKIP_FINAL_TEST_EVAL:-1}"
 

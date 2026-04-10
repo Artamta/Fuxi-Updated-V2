@@ -25,6 +25,10 @@ AR_NUM_WORKERS=${AR_NUM_WORKERS:-16}
 AR_PREFETCH_FACTOR=${AR_PREFETCH_FACTOR:-4}
 AR_EVAL_EVERY=${AR_EVAL_EVERY:-2}
 AR_SKIP_FINAL_TEST_EVAL=${AR_SKIP_FINAL_TEST_EVAL:-1}
+AR_MAX_ITERS=${AR_MAX_ITERS:-}
+AR_MAX_EPOCHS=${AR_MAX_EPOCHS:-}
+AR_PATIENCE=${AR_PATIENCE:-}
+AR_LR=${AR_LR:-}
 
 if [[ ! -f "${BASE_CKPT}" ]]; then
   echo "ERROR: BASE_CKPT not found: ${BASE_CKPT}" >&2
@@ -58,6 +62,19 @@ prepare_cfg() {
   sed -i "s|^  num_workers:.*|  num_workers: ${AR_NUM_WORKERS}|" "${dst}"
   sed -i "s|^  eval_every:.*|  eval_every: ${AR_EVAL_EVERY}|" "${dst}"
 
+  if [[ -n "${AR_MAX_ITERS}" ]]; then
+    sed -i "s|^  max_iters:.*|  max_iters: ${AR_MAX_ITERS}|" "${dst}"
+  fi
+  if [[ -n "${AR_MAX_EPOCHS}" ]]; then
+    sed -i "s|^  max_epochs:.*|  max_epochs: ${AR_MAX_EPOCHS}|" "${dst}"
+  fi
+  if [[ -n "${AR_PATIENCE}" ]]; then
+    sed -i "s|^  patience:.*|  patience: ${AR_PATIENCE}|" "${dst}"
+  fi
+  if [[ -n "${AR_LR}" ]]; then
+    sed -i "s|^  lr:.*|  lr: ${AR_LR}|" "${dst}"
+  fi
+
   if grep -q "^  prefetch_factor:" "${dst}"; then
     sed -i "s|^  prefetch_factor:.*|  prefetch_factor: ${AR_PREFETCH_FACTOR}|" "${dst}"
   else
@@ -73,7 +90,7 @@ prepare_cfg "${CONFIG_SHORT}" "${CFG_SHORT_RT}" "${EXP_SHORT}"
 prepare_cfg "${CONFIG_MEDIUM}" "${CFG_MEDIUM_RT}" "${EXP_MEDIUM}"
 prepare_cfg "${CONFIG_LONG}" "${CFG_LONG_RT}" "${EXP_LONG}"
 
-echo "Runtime tuning: batch=${AR_BATCH_SIZE}, workers=${AR_NUM_WORKERS}, prefetch=${AR_PREFETCH_FACTOR}, eval_every=${AR_EVAL_EVERY}, skip_final_test_eval=${AR_SKIP_FINAL_TEST_EVAL}"
+echo "Runtime tuning: batch=${AR_BATCH_SIZE}, workers=${AR_NUM_WORKERS}, prefetch=${AR_PREFETCH_FACTOR}, eval_every=${AR_EVAL_EVERY}, skip_final_test_eval=${AR_SKIP_FINAL_TEST_EVAL}, max_iters=${AR_MAX_ITERS:-config}, max_epochs=${AR_MAX_EPOCHS:-config}, patience=${AR_PATIENCE:-config}, lr=${AR_LR:-config}"
 
 run_stage() {
   local cfg=$1

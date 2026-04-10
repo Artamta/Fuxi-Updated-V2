@@ -106,6 +106,7 @@ def apply_config(args: argparse.Namespace, cfg: dict) -> argparse.Namespace:
         "input_noise_std", "noise_coarse_factor", "target_offset_steps",
         "curriculum_start_steps", "curriculum_max_steps", "curriculum_step_size",
         "curriculum_epoch_interval", "constant_lr", "prefetch_factor",
+        "status_every_steps",
         "skip_final_test_eval",
     ]:
         set_if("train", key)
@@ -188,6 +189,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=4,
         help="DataLoader prefetch factor per worker (used when num_workers > 0)",
+    )
+    p.add_argument(
+        "--status-every-steps",
+        type=int,
+        default=200,
+        help="Print in-epoch status every N optimizer steps (0 disables)",
     )
     p.add_argument(
         "--no-persistent-workers",
@@ -332,9 +339,10 @@ class AutoregressiveFuXiDataset(FuXiZarrDataset):
 
 
 def build_loaders(args):
-    dataset_forecast_steps = args.forecast_steps
-    if args.curriculum_max_steps and args.curriculum_max_steps > 0:
-        dataset_forecast_steps = max(dataset_forecast_steps, int(args.curriculum_max_steps))
+    dataset_forecast_steps = int(args.forecast_steps)
+    if args.curriculum_max_steps and int(args.curriculum_max_steps) > 0:
+        # Only load targets up to the maximum horizon that can actually be used.
+        dataset_forecast_steps = max(1, min(dataset_forecast_steps, int(args.curriculum_max_steps)))
 
     train_set = AutoregressiveFuXiDataset(
         args.zarr_store,
@@ -529,7 +537,7 @@ def compute_sequence_metrics(preds, targets, criterion):
 
 def train_one_epoch(model, loader, optimizer, criterion, device, scaler, use_fp16,
                     forecast_steps, teacher_forcing, grad_clip, max_iters, global_step,
-                    input_noise_std, noise_coarse_factor):
+                    input_noise_std, noise_coarse_factor, status_every_steps):
     model.train()
     total_loss = 0.0
     total_mae = 0.0
@@ -537,6 +545,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device, scaler, use_fp1
     total_last = 0.0
     count = 0
     updates = 0
+    epoch_t0 = time.perf_counter()
 
     for history, targets in loader:
         history = history.to(device, non_blocking=True)
@@ -576,6 +585,15 @@ def train_one_epoch(model, loader, optimizer, criterion, device, scaler, use_fp1
         count += bs
         updates += 1
         global_step += 1
+
+        if status_every_steps > 0 and (updates % status_every_steps == 0):
+            elapsed = max(time.perf_counter() - epoch_t0, 1e-6)
+            it_per_sec = updates / elapsed
+            print(
+                f"  [train] global_step={global_step} epoch_updates={updates} "
+                f"it/s={it_per_sec:.2f} loss={loss.item():.4f} mae={mae.item():.4f}",
+                flush=True,
+            )
 
         if max_iters is not None and global_step >= max_iters:
             break
@@ -732,6 +750,7 @@ def main():
             global_step,
             args.input_noise_std,
             args.noise_coarse_factor,
+            args.status_every_steps,
         )
 
         did_eval = (epoch % args.eval_every == 0)

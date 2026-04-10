@@ -28,8 +28,8 @@ train:
   target_offset_steps: 20
   teacher_forcing: 0.0
   curriculum_start_steps: 2
-  curriculum_max_steps: 12
-  curriculum_step_size: 2
+  curriculum_max_steps: 20
+  curriculum_step_size: 4
   curriculum_epoch_interval: 1
   input_noise_std: 0.0
   noise_coarse_factor: 16
