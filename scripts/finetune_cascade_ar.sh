@@ -109,26 +109,37 @@ run_stage() {
     "${extra_args[@]}"
 }
 
-SHORT_CKPT="${OUTPUT_ROOT}/${EXP_SHORT}/${CKPT_NAME}"
-MEDIUM_CKPT="${OUTPUT_ROOT}/${EXP_MEDIUM}/${CKPT_NAME}"
-LONG_CKPT="${OUTPUT_ROOT}/${EXP_LONG}/${CKPT_NAME}"
+resolve_stage_ckpt() {
+  local exp=$1
+  local preferred="${OUTPUT_ROOT}/${exp}/${CKPT_NAME}"
+  local fallback="${OUTPUT_ROOT}/${exp}/last.pt"
+
+  if [[ -f "${preferred}" ]]; then
+    echo "${preferred}"
+    return 0
+  fi
+
+  if [[ -f "${fallback}" ]]; then
+    echo "WARN: ${preferred} missing; falling back to ${fallback}" >&2
+    if [[ "${preferred}" != "${fallback}" ]]; then
+      ln -sfn "$(basename "${fallback}")" "${preferred}" 2>/dev/null || cp -f "${fallback}" "${preferred}"
+      echo "INFO: Materialized ${preferred} from fallback checkpoint." >&2
+    fi
+    echo "${preferred}"
+    return 0
+  fi
+
+  echo "ERROR: No checkpoint found for stage ${exp}. Expected ${preferred} or ${fallback}" >&2
+  return 1
+}
 
 run_stage "${CFG_SHORT_RT}" "${EXP_SHORT}" "${BASE_CKPT}"
-if [[ ! -f "${SHORT_CKPT}" ]]; then
-  echo "ERROR: Expected short-stage checkpoint not found: ${SHORT_CKPT}" >&2
-  exit 1
-fi
+SHORT_CKPT="$(resolve_stage_ckpt "${EXP_SHORT}")" || exit 1
 
 run_stage "${CFG_MEDIUM_RT}" "${EXP_MEDIUM}" "${SHORT_CKPT}"
-if [[ ! -f "${MEDIUM_CKPT}" ]]; then
-  echo "ERROR: Expected medium-stage checkpoint not found: ${MEDIUM_CKPT}" >&2
-  exit 1
-fi
+MEDIUM_CKPT="$(resolve_stage_ckpt "${EXP_MEDIUM}")" || exit 1
 
 run_stage "${CFG_LONG_RT}" "${EXP_LONG}" "${MEDIUM_CKPT}"
-if [[ ! -f "${LONG_CKPT}" ]]; then
-  echo "ERROR: Expected long-stage checkpoint not found: ${LONG_CKPT}" >&2
-  exit 1
-fi
+LONG_CKPT="$(resolve_stage_ckpt "${EXP_LONG}")" || exit 1
 
 echo "Done. Final checkpoint: ${LONG_CKPT}"
