@@ -1,0 +1,56 @@
+data:
+  zarr_store: /home/bedartha/public/datasets/as_downloaded/weatherbench2/era5/1959-2023_01_10-6h-240x121_equiangular_with_poles_conservative.zarr
+  train_start: 1979-01-01
+  train_end: 2015-12-31
+  val_start: 2016-01-01
+  val_end: 2017-12-31
+  test_start: 2018-01-01
+  test_end: 2018-12-31
+  history_steps: 2
+  pressure_vars: [temperature, geopotential, specific_humidity, u_component_of_wind, v_component_of_wind]
+  surface_vars: [2m_temperature, 10m_u_component_of_wind, 10m_v_component_of_wind, surface_pressure, total_column_water_vapour]
+  pressure_levels: [850, 500, 250]
+
+model:
+  preset: paper
+  embed_dim: 768
+  window_size: 8
+  num_heads: 8
+  depth_pre: 2
+  depth_mid: 44
+  depth_post: 2
+  mlp_ratio: 4.0
+  drop_path_rate: 0.2
+  use_checkpoint: true
+
+train:
+  forecast_steps: 20
+  target_offset_steps: 20
+  teacher_forcing: 0.0
+  curriculum_start_steps: 2
+  curriculum_max_steps: 12
+  curriculum_step_size: 2
+  curriculum_epoch_interval: 1
+  input_noise_std: 0.0
+  noise_coarse_factor: 16
+  max_epochs: 30
+  max_iters: 12000
+  batch_size: 4
+  num_workers: 8
+  lr: 0.0000001
+  constant_lr: true
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+  eval_every: 1
+  patience: 8
+  fp16: true
+
+output:
+  output_root: results/cascade_ar768
+  exp_name: stage_medium
+  seed: 43
+
+logging:
+  tensorboard: true

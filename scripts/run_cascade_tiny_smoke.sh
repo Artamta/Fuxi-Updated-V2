@@ -10,13 +10,18 @@ cd "${ROOT_DIR}"
 
 PYTHON_BIN="${PYTHON_BIN:-/home/raj.ayush/.conda/envs/weather_forecast/bin/python}"
 ZARR_STORE="${ZARR_STORE:-/home/bedartha/public/datasets/as_downloaded/weatherbench2/era5/1959-2023_01_10-6h-240x121_equiangular_with_poles_conservative.zarr}"
-MIG_UUID="${MIG_UUID:-MIG-9a3f0e56-0fcc-5489-aa6c-e333961575af}"
+MIG_UUID="${MIG_UUID:-}"
+GPU_INDEX="${GPU_INDEX:-0}"
 
 BASE_RUNS_DIR="${BASE_RUNS_DIR:-results/pretrain_tiny_smoke}"
 BASE_EXP_NAME="${BASE_EXP_NAME:-tiny_base_smoke}"
 BASE_CKPT="${BASE_RUNS_DIR}/${BASE_EXP_NAME}/best.pt"
 
-export CUDA_VISIBLE_DEVICES="${MIG_UUID}"
+if [[ -n "${MIG_UUID}" ]]; then
+  export CUDA_VISIBLE_DEVICES="${MIG_UUID}"
+else
+  export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-${GPU_INDEX}}"
+fi
 
 echo "============================================================"
 echo "Tiny cascade smoke"

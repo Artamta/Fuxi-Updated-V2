@@ -51,3 +51,33 @@ What this job does:
 - Default cascade configs are paper-sized and currently use `embed_dim=1536`; set model dims to match your base checkpoint.
 - Fine-tuning here still uses the single-step objective from `train.py` (one-step forecast). For full paper-accurate autoregressive curriculum, we would need to extend the training loop to ramp autoregressive steps and cache intermediate outputs; this setup is the simplified, runnable path.
 - TensorBoard can be toggled via `logging.tensorboard` or `--tensorboard` on the CLI.
+
+## AR 768 Poster Pipeline
+
+If you want the new 768 autoregressive cascade path, use:
+
+- Configs: `configs/cascade_ar768_short.yaml`, `configs/cascade_ar768_medium.yaml`, `configs/cascade_ar768_long.yaml`
+- Runner: `scripts/finetune_cascade_ar.sh`
+- Slurm submit (A100 priority): `scripts/slurm_prio_ar768_poster.sh`
+- Runbook: `docs/ar768_poster_runbook.md`
+
+Submit:
+
+```bash
+sbatch scripts/slurm_prio_ar768_poster.sh
+```
+
+Shortcut wrapper:
+
+```bash
+bash scripts/submit_ar768_fast.sh
+```
+
+Simple speed tuning (without editing YAMLs):
+
+```bash
+sbatch --export=ALL,AR_BATCH_SIZE=8,AR_NUM_WORKERS=16,AR_PREFETCH_FACTOR=4,AR_EVAL_EVERY=2,AR_SKIP_FINAL_TEST_EVAL=1 \
+	scripts/slurm_prio_ar768_poster.sh
+```
+
+This keeps the pipeline readable while letting you tune throughput and stability from one command.
