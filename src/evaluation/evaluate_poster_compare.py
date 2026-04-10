@@ -81,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--climo-start", type=str, default=None)
     p.add_argument("--climo-end", type=str, default=None)
     p.add_argument("--skip-existing", action="store_true")
+    p.add_argument(
+        "--no-heatmaps",
+        action="store_true",
+        help="Forward --no-heatmaps to evaluate_checkpoint for cleaner outputs",
+    )
 
     # Spectra settings
     p.add_argument(
@@ -162,6 +167,8 @@ def build_eval_command(args: argparse.Namespace, run: CheckpointRun) -> List[str
         cmd.extend(["--climo-start", args.climo_start])
     if args.climo_end:
         cmd.extend(["--climo-end", args.climo_end])
+    if args.no_heatmaps:
+        cmd.append("--no-heatmaps")
     return cmd
 
 

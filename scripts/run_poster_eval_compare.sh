@@ -25,6 +25,7 @@ MAX_SAMPLES=${MAX_SAMPLES:-256}
 SAVE_N_SAMPLES=${SAVE_N_SAMPLES:-24}
 AMP_MODE=${AMP_MODE:-bf16}
 DEVICE_MODE=${DEVICE_MODE:-cuda}
+NO_HEATMAPS=${NO_HEATMAPS:-1}
 
 BASE_CKPT=${BASE_CKPT:-"results/checkpoints_archive/fuxi_paper_prev/Models_paper/pretrain/emb_768/best.pt"}
 SHORT_CKPT="${RUN_ROOT}/stage_short/best.pt"
@@ -57,7 +58,13 @@ echo "FuXi poster comparison evaluation"
 echo "Run root     : ${RUN_ROOT}"
 echo "Output root  : ${OUTPUT_ROOT}"
 echo "Checkpoints  : ${CHECKPOINT_SPECS[*]}"
+echo "No heatmaps  : ${NO_HEATMAPS}"
 echo "============================================================"
+
+EXTRA_ARGS=()
+if [[ "${NO_HEATMAPS}" == "1" ]]; then
+  EXTRA_ARGS+=(--no-heatmaps)
+fi
 
 "${PYTHON_BIN}" -m src.evaluation.evaluate_poster_compare \
   --checkpoints "${CHECKPOINT_SPECS[@]}" \
@@ -70,6 +77,7 @@ echo "============================================================"
   --save-n-samples "${SAVE_N_SAMPLES}" \
   --amp "${AMP_MODE}" \
   --device "${DEVICE_MODE}" \
+  "${EXTRA_ARGS[@]}" \
   --skip-existing
 
 echo "Done. Poster comparison outputs: ${OUTPUT_ROOT}"

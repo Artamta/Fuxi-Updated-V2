@@ -136,6 +136,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Comma-separated variable names (exact) for lead-time curves",
     )
+    parser.add_argument(
+        "--no-heatmaps",
+        action="store_true",
+        help="Skip heatmap figures and keep only RMSE/ACC curves + CSV summaries",
+    )
     return parser
 
 
@@ -776,22 +781,23 @@ def main() -> None:
 
     write_metric_csvs(out_dir, accessor.var_names, rmse, acc)
 
-    plot_heatmap(
-        values=rmse,
-        var_names=accessor.var_names,
-        title="Area-weighted RMSE by variable and lead time",
-        cmap="viridis",
-        out_path=out_dir / "rmse_heatmap.png",
-    )
-    plot_heatmap(
-        values=acc,
-        var_names=accessor.var_names,
-        title="ACC by variable and lead time",
-        cmap="coolwarm",
-        out_path=out_dir / "acc_heatmap.png",
-        vmin=0.0,
-        vmax=1.0,
-    )
+    if not args.no_heatmaps:
+        plot_heatmap(
+            values=rmse,
+            var_names=accessor.var_names,
+            title="Area-weighted RMSE by variable and lead time",
+            cmap="viridis",
+            out_path=out_dir / "rmse_heatmap.png",
+        )
+        plot_heatmap(
+            values=acc,
+            var_names=accessor.var_names,
+            title="ACC by variable and lead time",
+            cmap="coolwarm",
+            out_path=out_dir / "acc_heatmap.png",
+            vmin=0.0,
+            vmax=1.0,
+        )
 
     if args.plot_vars is not None and len(args.plot_vars) > 0:
         selected = [i for i, n in enumerate(accessor.var_names) if n in set(args.plot_vars)]

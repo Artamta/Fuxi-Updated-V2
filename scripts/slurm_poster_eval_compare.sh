@@ -59,6 +59,7 @@ export MAX_SAMPLES=${MAX_SAMPLES:-256}
 export SAVE_N_SAMPLES=${SAVE_N_SAMPLES:-24}
 export AMP_MODE=${AMP_MODE:-fp16}
 export DEVICE_MODE=${DEVICE_MODE:-cuda}
+export NO_HEATMAPS=${NO_HEATMAPS:-1}
 export PYTHON_BIN
 
 echo "============================================================"
@@ -67,6 +68,7 @@ echo "Host         : $(hostname)"
 echo "Run root     : ${RUN_ROOT}"
 echo "Output root  : ${OUTPUT_ROOT}"
 echo "Python       : ${PYTHON_BIN}"
+echo "No heatmaps  : ${NO_HEATMAPS}"
 echo "============================================================"
 
 bash scripts/run_poster_eval_compare.sh "${RUN_ROOT}" "${OUTPUT_ROOT}"
