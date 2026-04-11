@@ -115,6 +115,9 @@ export AR_MAX_ITERS=${MAX_ITERS[$IDX]}
 export AR_MAX_EPOCHS=${MAX_EPOCHS[$IDX]}
 export AR_PATIENCE=${PATIENCE[$IDX]}
 export AR_LR=${LRS[$IDX]}
+export AR_INPUT_NOISE_STD=${AR_INPUT_NOISE_STD:-0.0}
+export AR_NOISE_COARSE_FACTOR=${AR_NOISE_COARSE_FACTOR:-16}
+export AR_STATUS_EVERY_STEPS=${AR_STATUS_EVERY_STEPS:-200}
 
 # If the 2-GPU profile lands on a 1-GPU allocation, downgrade to stable knobs.
 if (( REQ_GPUS >= 2 && EFFECTIVE_GPUS < 2 )); then
@@ -143,7 +146,7 @@ echo "Visible GPUs       : ${VISIBLE_GPUS}"
 echo "Effective GPUs     : ${EFFECTIVE_GPUS}"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "Output root        : ${OUTPUT_ROOT}"
-echo "AR tuning          : batch=${AR_BATCH_SIZE}, workers=${AR_NUM_WORKERS}, prefetch=${AR_PREFETCH_FACTOR}, max_iters=${AR_MAX_ITERS}, max_epochs=${AR_MAX_EPOCHS}, lr=${AR_LR}"
+echo "AR tuning          : batch=${AR_BATCH_SIZE}, workers=${AR_NUM_WORKERS}, prefetch=${AR_PREFETCH_FACTOR}, max_iters=${AR_MAX_ITERS}, max_epochs=${AR_MAX_EPOCHS}, lr=${AR_LR}, noise_std=${AR_INPUT_NOISE_STD}, noise_coarse=${AR_NOISE_COARSE_FACTOR}, status_every=${AR_STATUS_EVERY_STEPS}"
 echo "============================================================"
 
 probe_cuda_stack() {

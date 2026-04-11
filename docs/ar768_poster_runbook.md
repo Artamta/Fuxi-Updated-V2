@@ -37,6 +37,15 @@ sbatch --export=ALL,AR_BATCH_SIZE=8,AR_NUM_WORKERS=20,AR_PREFETCH_FACTOR=4,AR_EV
   scripts/slurm_prio_ar768_poster.sh
 ```
 
+LoRA (adapter-only) quick start for faster fine-tuning:
+
+```bash
+sbatch --export=ALL,AR_ENABLE_LORA=1,AR_LORA_RANK=16,AR_LORA_ALPHA=32,AR_LORA_DROPOUT=0.05,AR_LORA_TARGET_MODULES=qkv,proj,fc1,fc2,AR_LORA_BIAS=none,AR_LORA_TRAIN_BASE=0 \
+  scripts/slurm_prio_ar768_poster.sh
+```
+
+If you need more capacity, raise `AR_LORA_RANK` to `32` first.
+
 Or use the short helper wrapper:
 
 ```bash
@@ -95,6 +104,9 @@ Expected outputs:
 - `stage_short/best.pt`
 - `stage_medium/best.pt`
 - `stage_long/best.pt`
+- `stage_short/epoch_metrics.csv` and `stage_short/loss_curve.png`
+- `stage_medium/epoch_metrics.csv` and `stage_medium/loss_curve.png`
+- `stage_long/epoch_metrics.csv` and `stage_long/loss_curve.png`
 - `stage_long/evaluation_rollout60/summary.json`
 - `summary.txt`
 
@@ -211,3 +223,34 @@ Cancel old job if you decide to free cn3 resources:
 ```bash
 scancel 7580
 ```
+
+## A30 LoRA matrix launcher
+
+Submit the default 9-variant matrix (noise `{0.0,0.03,0.08}` x LoRA rank `{8,16,32}`) on the `a30_2gpu` profile:
+
+```bash
+bash scripts/submit_a30_ar768_lora_matrix.sh
+```
+
+This writes a submission index file:
+
+- `results/final_runs/a30_lora_matrix_<timestamp>/submissions.csv`
+
+Monitor all matrix jobs:
+
+```bash
+squeue -j <comma_separated_job_ids> -o "%.18i %.8T %.10M %.20R"
+```
+
+Generate or refresh audit outputs:
+
+```bash
+/home/raj.ayush/.conda/envs/weather_forecast/bin/python scripts/audit_a30_ar768_lora_matrix.py \
+  --submissions-csv results/final_runs/a30_lora_matrix_<timestamp>/submissions.csv
+```
+
+Audit artifacts:
+
+- `results/final_runs/a30_lora_matrix_<timestamp>/audit/matrix_summary.csv`
+- `results/final_runs/a30_lora_matrix_<timestamp>/audit/matrix_summary.json`
+- `results/final_runs/a30_lora_matrix_<timestamp>/audit/matrix_report.md`

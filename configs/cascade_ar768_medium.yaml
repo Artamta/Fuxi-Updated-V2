@@ -23,6 +23,15 @@ model:
   drop_path_rate: 0.2
   use_checkpoint: true
 
+finetuning:
+  enable_lora: false
+  lora_rank: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  lora_target_modules: [qkv, proj, fc1, fc2]
+  lora_bias: none
+  lora_train_base: false
+
 train:
   forecast_steps: 20
   target_offset_steps: 20

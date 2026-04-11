@@ -29,6 +29,16 @@ AR_MAX_ITERS=${AR_MAX_ITERS:-}
 AR_MAX_EPOCHS=${AR_MAX_EPOCHS:-}
 AR_PATIENCE=${AR_PATIENCE:-}
 AR_LR=${AR_LR:-}
+AR_INPUT_NOISE_STD=${AR_INPUT_NOISE_STD:-0.0}
+AR_NOISE_COARSE_FACTOR=${AR_NOISE_COARSE_FACTOR:-16}
+AR_STATUS_EVERY_STEPS=${AR_STATUS_EVERY_STEPS:-200}
+AR_ENABLE_LORA=${AR_ENABLE_LORA:-0}
+AR_LORA_RANK=${AR_LORA_RANK:-}
+AR_LORA_ALPHA=${AR_LORA_ALPHA:-}
+AR_LORA_DROPOUT=${AR_LORA_DROPOUT:-}
+AR_LORA_TARGET_MODULES=${AR_LORA_TARGET_MODULES:-}
+AR_LORA_BIAS=${AR_LORA_BIAS:-}
+AR_LORA_TRAIN_BASE=${AR_LORA_TRAIN_BASE:-0}
 
 if [[ ! -f "${BASE_CKPT}" ]]; then
   echo "ERROR: BASE_CKPT not found: ${BASE_CKPT}" >&2
@@ -61,6 +71,21 @@ prepare_cfg() {
   sed -i "s|^  batch_size:.*|  batch_size: ${AR_BATCH_SIZE}|" "${dst}"
   sed -i "s|^  num_workers:.*|  num_workers: ${AR_NUM_WORKERS}|" "${dst}"
   sed -i "s|^  eval_every:.*|  eval_every: ${AR_EVAL_EVERY}|" "${dst}"
+  if grep -q "^  input_noise_std:" "${dst}"; then
+    sed -i "s|^  input_noise_std:.*|  input_noise_std: ${AR_INPUT_NOISE_STD}|" "${dst}"
+  else
+    sed -i "/^  eval_every:/a\  input_noise_std: ${AR_INPUT_NOISE_STD}" "${dst}"
+  fi
+  if grep -q "^  noise_coarse_factor:" "${dst}"; then
+    sed -i "s|^  noise_coarse_factor:.*|  noise_coarse_factor: ${AR_NOISE_COARSE_FACTOR}|" "${dst}"
+  else
+    sed -i "/^  input_noise_std:/a\  noise_coarse_factor: ${AR_NOISE_COARSE_FACTOR}" "${dst}"
+  fi
+  if grep -q "^  status_every_steps:" "${dst}"; then
+    sed -i "s|^  status_every_steps:.*|  status_every_steps: ${AR_STATUS_EVERY_STEPS}|" "${dst}"
+  else
+    sed -i "/^  eval_every:/a\  status_every_steps: ${AR_STATUS_EVERY_STEPS}" "${dst}"
+  fi
 
   if [[ -n "${AR_MAX_ITERS}" ]]; then
     sed -i "s|^  max_iters:.*|  max_iters: ${AR_MAX_ITERS}|" "${dst}"
@@ -90,7 +115,7 @@ prepare_cfg "${CONFIG_SHORT}" "${CFG_SHORT_RT}" "${EXP_SHORT}"
 prepare_cfg "${CONFIG_MEDIUM}" "${CFG_MEDIUM_RT}" "${EXP_MEDIUM}"
 prepare_cfg "${CONFIG_LONG}" "${CFG_LONG_RT}" "${EXP_LONG}"
 
-echo "Runtime tuning: batch=${AR_BATCH_SIZE}, workers=${AR_NUM_WORKERS}, prefetch=${AR_PREFETCH_FACTOR}, eval_every=${AR_EVAL_EVERY}, skip_final_test_eval=${AR_SKIP_FINAL_TEST_EVAL}, max_iters=${AR_MAX_ITERS:-config}, max_epochs=${AR_MAX_EPOCHS:-config}, patience=${AR_PATIENCE:-config}, lr=${AR_LR:-config}"
+echo "Runtime tuning: batch=${AR_BATCH_SIZE}, workers=${AR_NUM_WORKERS}, prefetch=${AR_PREFETCH_FACTOR}, eval_every=${AR_EVAL_EVERY}, status_every=${AR_STATUS_EVERY_STEPS}, noise_std=${AR_INPUT_NOISE_STD}, noise_coarse_factor=${AR_NOISE_COARSE_FACTOR}, skip_final_test_eval=${AR_SKIP_FINAL_TEST_EVAL}, max_iters=${AR_MAX_ITERS:-config}, max_epochs=${AR_MAX_EPOCHS:-config}, patience=${AR_PATIENCE:-config}, lr=${AR_LR:-config}, enable_lora=${AR_ENABLE_LORA}, lora_rank=${AR_LORA_RANK:-config}, lora_alpha=${AR_LORA_ALPHA:-config}, lora_dropout=${AR_LORA_DROPOUT:-config}, lora_target_modules=${AR_LORA_TARGET_MODULES:-config}, lora_bias=${AR_LORA_BIAS:-config}, lora_train_base=${AR_LORA_TRAIN_BASE}"
 
 run_stage() {
   local cfg=$1
@@ -101,6 +126,30 @@ run_stage() {
   echo "==> Stage: ${exp}"
   if [[ "${AR_SKIP_FINAL_TEST_EVAL}" == "1" ]]; then
     extra_args+=(--skip-final-test-eval)
+  fi
+  extra_args+=(--input-noise-std "${AR_INPUT_NOISE_STD}")
+  extra_args+=(--noise-coarse-factor "${AR_NOISE_COARSE_FACTOR}")
+  extra_args+=(--status-every-steps "${AR_STATUS_EVERY_STEPS}")
+  if [[ "${AR_ENABLE_LORA}" == "1" ]]; then
+    extra_args+=(--enable-lora)
+    if [[ -n "${AR_LORA_RANK}" ]]; then
+      extra_args+=(--lora-rank "${AR_LORA_RANK}")
+    fi
+    if [[ -n "${AR_LORA_ALPHA}" ]]; then
+      extra_args+=(--lora-alpha "${AR_LORA_ALPHA}")
+    fi
+    if [[ -n "${AR_LORA_DROPOUT}" ]]; then
+      extra_args+=(--lora-dropout "${AR_LORA_DROPOUT}")
+    fi
+    if [[ -n "${AR_LORA_TARGET_MODULES}" ]]; then
+      extra_args+=(--lora-target-modules "${AR_LORA_TARGET_MODULES}")
+    fi
+    if [[ -n "${AR_LORA_BIAS}" ]]; then
+      extra_args+=(--lora-bias "${AR_LORA_BIAS}")
+    fi
+    if [[ "${AR_LORA_TRAIN_BASE}" == "1" ]]; then
+      extra_args+=(--lora-train-base)
+    fi
   fi
   "${PYTHON_BIN}" -u -m src.training.train_autoregressive \
     --config "${cfg}" \

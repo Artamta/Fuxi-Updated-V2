@@ -14,10 +14,12 @@ Key features
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
+import sys
 import time
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -26,9 +28,27 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 try:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except Exception:
+    plt = None
+    MATPLOTLIB_AVAILABLE = False
+
+try:
     import yaml
 except ImportError:
     yaml = None
+
+try:
+    from peft import LoraConfig, get_peft_model
+    PEFT_AVAILABLE = True
+except Exception:
+    LoraConfig = None
+    get_peft_model = None
+    PEFT_AVAILABLE = False
 
 try:
     from ..models.fuxi_model import make_fuxi
@@ -51,6 +71,7 @@ except ImportError:
 
 # Default WeatherBench2 Zarr (paper path)
 ZARR_STORE = "/home/bedartha/public/datasets/as_downloaded/weatherbench2/era5/1959-2023_01_10-6h-240x121_equiangular_with_poles_conservative.zarr"
+DEFAULT_LORA_TARGET_MODULES = ["qkv", "proj", "fc1", "fc2"]
 
 
 def parse_csv_list(value: Optional[str]):
@@ -60,6 +81,20 @@ def parse_csv_list(value: Optional[str]):
     if not value:
         return None
     return [v.strip() for v in value.split(",") if v.strip()]
+
+
+def parse_cli_overrides(argv: List[str]) -> set:
+    """Collect explicit --flag tokens provided on the command line."""
+    overrides = set()
+    for token in argv:
+        if token == "--":
+            break
+        if token.startswith("--") and len(token) > 2:
+            if "=" in token:
+                overrides.add(token.split("=", 1)[0])
+            else:
+                overrides.add(token)
+    return overrides
 
 
 def load_config(path: Optional[str]) -> Optional[dict]:
@@ -80,8 +115,13 @@ def apply_config(args: argparse.Namespace, cfg: dict) -> argparse.Namespace:
     if not cfg:
         return args
 
+    cli_overrides = getattr(args, "_cli_overrides", set())
+
     def set_if(section: str, key: str, attr: str = None):
         attr = attr or key
+        cli_flag = f"--{attr.replace('_', '-')}"
+        if cli_flag in cli_overrides:
+            return
         if section in cfg and key in cfg[section]:
             setattr(args, attr, cfg[section][key])
 
@@ -113,6 +153,12 @@ def apply_config(args: argparse.Namespace, cfg: dict) -> argparse.Namespace:
 
     for key in ["output_root", "exp_name", "resume", "seed"]:
         set_if("output", key)
+
+    for key in [
+        "enable_lora", "lora_rank", "lora_alpha", "lora_dropout",
+        "lora_target_modules", "lora_bias", "lora_train_base",
+    ]:
+        set_if("finetuning", key)
 
     set_if("logging", "tensorboard")
     return args
@@ -244,6 +290,22 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--fp16", action="store_true")
     p.add_argument("--gpus", type=int, default=None)
 
+    # Parameter-efficient fine-tuning (LoRA)
+    p.add_argument("--enable-lora", action="store_true",
+                   help="Enable LoRA adapters for parameter-efficient fine-tuning")
+    p.add_argument("--lora-rank", type=int, default=16,
+                   help="LoRA rank (r)")
+    p.add_argument("--lora-alpha", type=float, default=32.0,
+                   help="LoRA scaling alpha")
+    p.add_argument("--lora-dropout", type=float, default=0.05,
+                   help="LoRA dropout")
+    p.add_argument("--lora-target-modules", type=str, default=",".join(DEFAULT_LORA_TARGET_MODULES),
+                   help="Comma-separated target module suffixes for LoRA")
+    p.add_argument("--lora-bias", choices=["none", "lora_only", "all"], default="none",
+                   help="Bias handling in LoRA")
+    p.add_argument("--lora-train-base", action="store_true",
+                   help="Train base model parameters in addition to LoRA adapters")
+
     # Variables / levels
     p.add_argument("--pressure-vars", type=str, default=None,
                    help="Comma-separated pressure variable names")
@@ -252,12 +314,78 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--pressure-levels", type=str, default=None,
                    help="Comma-separated pressure levels (ints)")
 
-    return p.parse_args()
+    args = p.parse_args()
+    args._cli_overrides = parse_cli_overrides(sys.argv[1:])
+    return args
 
 
 def ensure_dir(path: str) -> str:
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def save_epoch_metrics_csv(rows: List[Dict[str, float]], out_path: str) -> None:
+    if not rows:
+        return
+    fieldnames = [
+        "epoch", "horizon", "global_step",
+        "train_loss", "train_mae", "train_first_mae", "train_last_mae",
+        "val_loss", "val_mae", "val_first_mae", "val_last_mae",
+        "it_per_sec", "samples_per_sec", "eta_hours",
+    ]
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def plot_training_curves(rows: List[Dict[str, float]], out_path: str) -> None:
+    if not MATPLOTLIB_AVAILABLE or not rows:
+        return
+
+    epochs = [int(r["epoch"]) for r in rows]
+    train_loss = [float(r["train_loss"]) for r in rows]
+    train_mae = [float(r["train_mae"]) for r in rows]
+    val_loss_points = [(int(r["epoch"]), float(r["val_loss"])) for r in rows if np.isfinite(float(r["val_loss"]))]
+    val_mae_points = [(int(r["epoch"]), float(r["val_mae"])) for r in rows if np.isfinite(float(r["val_mae"]))]
+
+    fig, axes = plt.subplots(2, 1, figsize=(9, 8), sharex=True)
+
+    axes[0].plot(epochs, train_loss, label="Train loss", linewidth=2.0)
+    if val_loss_points:
+        axes[0].plot(
+            [x for x, _ in val_loss_points],
+            [y for _, y in val_loss_points],
+            label="Val loss",
+            linewidth=2.0,
+            marker="o",
+            markersize=4,
+        )
+    axes[0].set_ylabel("Lat-weighted L1")
+    axes[0].set_title("Loss Curves")
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+
+    axes[1].plot(epochs, train_mae, label="Train MAE", linewidth=2.0)
+    if val_mae_points:
+        axes[1].plot(
+            [x for x, _ in val_mae_points],
+            [y for _, y in val_mae_points],
+            label="Val MAE",
+            linewidth=2.0,
+            marker="o",
+            markersize=4,
+        )
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("MAE")
+    axes[1].set_title("MAE Curves")
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=180)
+    plt.close(fig)
 
 
 def set_seeds(seed: int) -> None:
@@ -446,10 +574,45 @@ def build_model(num_vars: int, spatial_h: int, spatial_w: int, args, device: tor
         **overrides,
     ).to(device)
 
+    if args.enable_lora:
+        if not PEFT_AVAILABLE:
+            raise ImportError(
+                "LoRA was requested (--enable-lora) but PEFT is not installed. "
+                "Install dependencies from requirements.txt or run: pip install peft"
+            )
+        if args.lora_rank <= 0:
+            raise ValueError("lora_rank must be > 0 when LoRA is enabled")
+
+        target_modules = args.lora_target_modules or list(DEFAULT_LORA_TARGET_MODULES)
+        lora_cfg = LoraConfig(
+            r=int(args.lora_rank),
+            lora_alpha=float(args.lora_alpha),
+            target_modules=target_modules,
+            lora_dropout=float(args.lora_dropout),
+            bias=str(args.lora_bias),
+        )
+        model = get_peft_model(model, lora_cfg)
+
+        if args.lora_train_base:
+            for p in model.parameters():
+                p.requires_grad = True
+
+        mode = "LoRA + full base" if args.lora_train_base else "LoRA adapter-only"
+        print(
+            "LoRA enabled | "
+            f"mode={mode} | rank={args.lora_rank} | alpha={args.lora_alpha} "
+            f"| dropout={args.lora_dropout} | targets={target_modules}"
+        )
+        if hasattr(model, "print_trainable_parameters"):
+            model.print_trainable_parameters()
+
     num_gpus = args.gpus or torch.cuda.device_count()
     if num_gpus > 1 and torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model, device_ids=list(range(num_gpus)))
     raw_model = model.module if hasattr(model, "module") else model
+    total_params = sum(p.numel() for p in raw_model.parameters())
+    trainable_params = sum(p.numel() for p in raw_model.parameters() if p.requires_grad)
+    print(f"Parameters: trainable={trainable_params:,} / total={total_params:,} ({100.0 * trainable_params / max(total_params, 1):.2f}%)")
     return model, raw_model
 
 
@@ -642,13 +805,58 @@ def evaluate(model, loader, criterion, device, use_fp16, forecast_steps):
     )
 
 
-def load_checkpoint_if_any(raw_model, optimizer, device, resume_path: Optional[str], resume_model_only: bool = False):
+def load_checkpoint_if_any(
+    raw_model,
+    optimizer,
+    device,
+    resume_path: Optional[str],
+    resume_model_only: bool = False,
+    expect_lora: bool = False,
+):
     if not resume_path:
         return None
     ckpt = torch.load(resume_path, map_location=device, weights_only=False)
-    raw_model.load_state_dict(ckpt.get("model_state", ckpt))
+    model_state = ckpt.get("model_state", ckpt)
+
+    loaded = False
+    if expect_lora and hasattr(raw_model, "get_base_model"):
+        base_model = raw_model.get_base_model()
+
+        if "base_model_state" in ckpt:
+            base_model.load_state_dict(ckpt["base_model_state"], strict=False)
+            print("Loaded base model state from LoRA checkpoint.")
+            loaded = True
+
+        if isinstance(model_state, dict):
+            has_peft_keys = any(k.startswith("base_model.") or "lora_" in k for k in model_state)
+            if has_peft_keys:
+                missing, unexpected = raw_model.load_state_dict(model_state, strict=False)
+                if missing:
+                    print(f"Resume warning: missing {len(missing)} keys while loading LoRA model state.")
+                if unexpected:
+                    print(f"Resume warning: unexpected {len(unexpected)} keys while loading LoRA model state.")
+                loaded = True
+            else:
+                base_missing, base_unexpected = base_model.load_state_dict(model_state, strict=False)
+                if base_missing:
+                    print(f"Resume warning: missing {len(base_missing)} keys while loading base model state.")
+                if base_unexpected:
+                    print(f"Resume warning: unexpected {len(base_unexpected)} keys while loading base model state.")
+                loaded = True
+
+    if not loaded:
+        strict = not expect_lora
+        missing, unexpected = raw_model.load_state_dict(model_state, strict=strict)
+        if missing:
+            print(f"Resume warning: missing {len(missing)} keys while loading model state.")
+        if unexpected:
+            print(f"Resume warning: unexpected {len(unexpected)} keys while loading model state.")
+
     if (not resume_model_only) and "optimizer_state" in ckpt:
-        optimizer.load_state_dict(ckpt["optimizer_state"])
+        try:
+            optimizer.load_state_dict(ckpt["optimizer_state"])
+        except Exception as exc:
+            print(f"Resume warning: failed to load optimizer state ({exc}). Continuing with fresh optimizer state.")
     return ckpt
 
 
@@ -656,6 +864,8 @@ def main():
     args = parse_args()
     cfg = load_config(args.config)
     args = apply_config(args, cfg)
+    if hasattr(args, "_cli_overrides"):
+        delattr(args, "_cli_overrides")
 
     args.pressure_vars = args.pressure_vars if isinstance(args.pressure_vars, list) else parse_csv_list(args.pressure_vars)
     args.surface_vars = args.surface_vars if isinstance(args.surface_vars, list) else parse_csv_list(args.surface_vars)
@@ -670,6 +880,12 @@ def main():
     else:
         pl = parse_csv_list(args.pressure_levels)
         args.pressure_levels = [int(v) for v in pl] if pl else list(DEFAULT_PRESSURE_LEVELS)
+
+    if isinstance(args.lora_target_modules, list):
+        args.lora_target_modules = [str(v).strip() for v in args.lora_target_modules if str(v).strip()]
+    else:
+        parsed = parse_csv_list(args.lora_target_modules)
+        args.lora_target_modules = parsed if parsed else list(DEFAULT_LORA_TARGET_MODULES)
 
     set_seeds(args.seed)
 
@@ -687,8 +903,12 @@ def main():
 
     model, raw_model = build_model(num_vars, spatial_h, spatial_w, args, device)
 
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    if not trainable_params:
+        raise RuntimeError("No trainable parameters found. Check LoRA/base training configuration.")
+
     optimizer = optim.AdamW(
-        model.parameters(),
+        trainable_params,
         lr=args.lr,
         betas=(args.beta1, args.beta2),
         weight_decay=args.weight_decay,
@@ -703,7 +923,14 @@ def main():
     ).to(device)
     scaler = torch.cuda.amp.GradScaler() if use_fp16 else None
 
-    ckpt = load_checkpoint_if_any(raw_model, optimizer, device, args.resume, args.resume_model_only)
+    ckpt = load_checkpoint_if_any(
+        raw_model,
+        optimizer,
+        device,
+        args.resume,
+        args.resume_model_only,
+        expect_lora=bool(args.enable_lora),
+    )
     if ckpt and not args.resume_model_only:
         start_epoch = int(ckpt.get("epoch", 0)) + 1
         global_step = int(ckpt.get("global_step", 0))
@@ -730,6 +957,10 @@ def main():
         f"| persistent={args.num_workers > 0 and not args.no_persistent_workers}"
     )
     print(f"Data: {num_vars} vars, {spatial_h}x{spatial_w}; train/val/test = {len(train_set)}/{len(val_set)}/{len(test_set)}")
+
+    epoch_rows: List[Dict[str, float]] = []
+    epoch_metrics_path = os.path.join(run_dir, "epoch_metrics.csv")
+    loss_curve_path = os.path.join(run_dir, "loss_curve.png")
 
     for epoch in range(start_epoch, args.max_epochs + 1):
         epoch_t0 = time.perf_counter()
@@ -784,6 +1015,27 @@ def main():
             f"sec={epoch_sec:.1f} | it/s={iter_per_sec:.2f} | sample/s={samples_per_sec:.2f} "
             f"| ETA={eta_hours:.2f}h"
         )
+
+        epoch_rows.append(
+            {
+                "epoch": float(epoch),
+                "horizon": float(active_forecast_steps),
+                "global_step": float(global_step),
+                "train_loss": float(train_loss),
+                "train_mae": float(train_mae),
+                "train_first_mae": float(train_first),
+                "train_last_mae": float(train_last),
+                "val_loss": float(val_loss),
+                "val_mae": float(val_mae),
+                "val_first_mae": float(val_first),
+                "val_last_mae": float(val_last),
+                "it_per_sec": float(iter_per_sec),
+                "samples_per_sec": float(samples_per_sec),
+                "eta_hours": float(eta_hours),
+            }
+        )
+        save_epoch_metrics_csv(epoch_rows, epoch_metrics_path)
+        plot_training_curves(epoch_rows, loss_curve_path)
 
         ckpt = {
             "epoch": epoch,
@@ -844,6 +1096,11 @@ def main():
         )
 
     print(f"Done. Run directory: {run_dir}")
+    print(f"Saved epoch metrics: {epoch_metrics_path}")
+    if MATPLOTLIB_AVAILABLE:
+        print(f"Saved training curves: {loss_curve_path}")
+    else:
+        print("Skipped loss curve plotting because matplotlib is unavailable.")
 
 
 if __name__ == "__main__":
