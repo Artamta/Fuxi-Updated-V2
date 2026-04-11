@@ -8,6 +8,7 @@
 #SBATCH --mem=96G
 #SBATCH --time=1-18:00:00
 #SBATCH --array=1-6
+#SBATCH --exclude=cn3
 #SBATCH -o logs/fuxi_lora_a30_fast_%A_%a.out
 #SBATCH -e logs/fuxi_lora_a30_fast_%A_%a.err
 
@@ -106,6 +107,21 @@ detect_mig_mode() {
   fi
 }
 
+first_visible_gpu_mem_mb() {
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    echo "0"
+    return 0
+  fi
+
+  local mem
+  mem=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n 1 | tr -d ' ')
+  if [[ -z "${mem}" ]]; then
+    echo "0"
+    return 0
+  fi
+  echo "${mem}"
+}
+
 resolve_stage_ckpt() {
   local stage_name=$1
   local preferred="${RUN_DIR}/${stage_name}/best.pt"
@@ -156,6 +172,13 @@ if [[ "${MIG_MODE}" == "1" ]]; then
       export CUDA_VISIBLE_DEVICES=0
     fi
     GPUS_TO_USE=1
+  fi
+
+  FIRST_GPU_MEM_MB=$(first_visible_gpu_mem_mb)
+  if [[ -n "${FIRST_GPU_MEM_MB}" && "${FIRST_GPU_MEM_MB}" != "0" && "${FIRST_GPU_MEM_MB}" -lt 12000 ]]; then
+    echo "ERROR: MIG allocation provides ${FIRST_GPU_MEM_MB} MiB GPU memory; AR768 LoRA cannot run reliably below 12 GiB." >&2
+    echo "ERROR: Requeue on full A30 nodes only (current node: $(hostname))." >&2
+    exit 66
   fi
 fi
 
