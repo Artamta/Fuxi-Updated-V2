@@ -1,8 +1,10 @@
 accelerate>=1.1.0
 matplotlib>=3.7
+netCDF4>=1.7
 numpy>=1.24
 pandas>=2.0
 peft>=0.12
 torch>=2.1
 tensorboard>=2.14
+xarray>=2023.6
 zarr>=2.16
