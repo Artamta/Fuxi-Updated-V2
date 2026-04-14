@@ -392,7 +392,11 @@ def write_forecast_netcdf(
         "forecast": {"zlib": True, "complevel": 1, "dtype": "float32"},
         "truth": {"zlib": True, "complevel": 1, "dtype": "float32"},
     }
-    ds.to_netcdf(out_path, engine="netcdf4", encoding=encoding)
+    try:
+        ds.to_netcdf(out_path, engine="netcdf4", encoding=encoding)
+    except Exception as exc:
+        print(f"[warn] netcdf4 engine unavailable ({exc}); writing without explicit engine/compression")
+        ds.to_netcdf(out_path)
     ds.close()
 
 
@@ -614,7 +618,10 @@ def main() -> None:
             "test_start": spec.test_start,
             "test_end": spec.test_end,
             "n_init_times": int(init_times.shape[0]),
-            "init_times": [str(t) for t in init_times.astype("datetime64[ns]").tolist()],
+            "init_times": [
+                np.datetime_as_string(t.astype("datetime64[s]"), unit="s")
+                for t in init_times.astype("datetime64[ns]")
+            ],
             "rollout_steps": int(args.rollout_steps),
             "lead_hours": (lead_steps * 6).tolist(),
             "channels": accessor.var_names,

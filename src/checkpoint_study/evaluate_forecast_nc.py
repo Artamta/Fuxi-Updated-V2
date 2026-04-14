@@ -232,11 +232,19 @@ def _to_datetime(value) -> np.datetime64:
     return np.datetime64(str(value)).astype("datetime64[ns]")
 
 
+def open_dataset_with_fallback(path: Path) -> xr.Dataset:
+    try:
+        return xr.open_dataset(path, engine="netcdf4")
+    except Exception as exc:
+        print(f"[warn] netcdf4 engine unavailable ({exc}); falling back to default xarray engine")
+        return xr.open_dataset(path)
+
+
 def evaluate_one_file(
     forecast_path: Path,
     climo_accessor: HourlyClimatologyAccessor,
 ) -> Tuple[List[str], np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    ds = xr.open_dataset(forecast_path, engine="netcdf4")
+    ds = open_dataset_with_fallback(forecast_path)
     try:
         forecast = ds["forecast"].values.astype(np.float64)
         truth = ds["truth"].values.astype(np.float64)
@@ -455,7 +463,7 @@ def main() -> None:
 
         print(f"\n[run] {fc.name} -> {fc.path}")
 
-        ds_meta = xr.open_dataset(fc.path, engine="netcdf4")
+        ds_meta = open_dataset_with_fallback(fc.path)
         try:
             channel_names = [str(v) for v in ds_meta["channel_name"].values.tolist()]
             latitudes = ds_meta["lat"].values.astype(np.float32)
