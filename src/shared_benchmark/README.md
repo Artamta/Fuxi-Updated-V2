@@ -97,14 +97,18 @@ It also writes `comparison/horizon_comparison.csv` using your `horizon_days` win
 
 These example images are generated from real benchmark runs in this repo:
 
-- [Comparison figure](../../docs/shared_benchmark_examples/model_comparison.png)
-- [RMSE per-variable panels (all 20 variables)](../../docs/shared_benchmark_examples/poster_all20_rmse_per_variable_emb768.png)
-- [ACC per-variable panels (all 20 variables)](../../docs/shared_benchmark_examples/poster_all20_acc_per_variable_emb768.png)
+### Comparison figure
 
-Note:
+![Comparison figure](../../docs/shared_benchmark_examples/model_comparison.png)
 
-- `poster_all20_rmse_overlay_emb768.png` is no longer produced.
-- The overlay version was removed because it was hard to read for poster use.
+### RMSE per-variable panels (all 20 variables)
+
+![RMSE per-variable panels (all 20 variables)](../../docs/shared_benchmark_examples/poster_all20_rmse_per_variable_emb768.png)
+
+### ACC per-variable panels (all 20 variables)
+
+![ACC per-variable panels (all 20 variables)](../../docs/shared_benchmark_examples/poster_all20_acc_per_variable_emb768.png)
+
 
 ## Expected results after running benchmark
 
