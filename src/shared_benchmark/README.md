@@ -195,6 +195,20 @@ Each model entry:
 
 - both `forecast` and `truth` must be `(init_time, lead_step, channel, lat, lon)`
 
+## Need help?
+
+If you run into any issue, please open a GitHub issue:
+
+- https://github.com/Artamta/Fuxi-Updated-V2/issues
+
+When you open an issue, include these details so the problem is easy to reproduce:
+
+1. your command
+2. your config snippet
+3. full error traceback
+4. path to one forecast file you used
+5. Python version and environment name
+
 ## Quick export checklist
 
 Before evaluation, make sure your file has:
