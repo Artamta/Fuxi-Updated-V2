@@ -571,7 +571,7 @@ def write_forecast_netcdf(
             "history_steps": int(spec.history_steps),
             "rollout_steps": int(lead_steps.shape[0]),
             "lead_interval_hours": 6,
-            "lora_enabled": bool(lora_enabled),
+            "lora_enabled": int(bool(lora_enabled)),
         },
     )
 

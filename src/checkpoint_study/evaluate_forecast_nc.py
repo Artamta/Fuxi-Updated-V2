@@ -603,6 +603,59 @@ def plot_overall_rollout(
     plt.close(fig)
 
 
+def _valid_horizon_days(horizon_days: Sequence[int]) -> List[int]:
+    return sorted(set(int(d) for d in horizon_days if int(d) > 0))
+
+
+def _add_horizon_guides(ax: plt.Axes, horizon_days: Sequence[int]) -> None:
+    for day in _valid_horizon_days(horizon_days):
+        ax.axvline(float(day), color="#9e9e9e", linestyle="--", linewidth=0.9, alpha=0.55)
+
+
+def plot_average_metrics(
+    out_dir: Path,
+    lead_days: np.ndarray,
+    rmse_weighted: np.ndarray,
+    rmse_unweighted: np.ndarray,
+    acc: np.ndarray,
+    horizon_days: Sequence[int],
+) -> None:
+    rmse_w_mean = np.mean(rmse_weighted, axis=1)
+
+    rmse_u_mean = np.mean(rmse_unweighted, axis=1)
+
+    acc_mean = np.mean(acc, axis=1)
+
+    fig, axes = plt.subplots(2, 1, figsize=(12.5, 9.0), constrained_layout=True)
+
+    axes[0].plot(lead_days, rmse_w_mean, color="#1f77b4", linewidth=2.5, label="Weighted RMSE mean")
+    axes[0].plot(
+        lead_days,
+        rmse_u_mean,
+        color="#2ca02c",
+        linewidth=2.2,
+        linestyle="--",
+        label="Unweighted RMSE mean",
+    )
+    _add_horizon_guides(axes[0], horizon_days)
+    axes[0].set_title("Average RMSE over all variables")
+    axes[0].set_xlabel("Lead time (days)")
+    axes[0].set_ylabel("RMSE")
+    axes[0].legend(frameon=False)
+
+    axes[1].plot(lead_days, acc_mean, color="#d62728", linewidth=2.5, label="ACC mean")
+    _add_horizon_guides(axes[1], horizon_days)
+    axes[1].axhline(0.0, color="black", linewidth=1.0, alpha=0.6)
+    axes[1].set_title("Average ACC over all variables")
+    axes[1].set_xlabel("Lead time (days)")
+    axes[1].set_ylabel("ACC")
+    axes[1].set_ylim(min(-0.1, float(np.nanmin(acc_mean) - 0.05)), 1.02)
+    axes[1].legend(frameon=False)
+
+    fig.savefig(out_dir / "average_rmse_acc_rollout.png", dpi=240)
+    plt.close(fig)
+
+
 def _is_surface_name(name: str) -> bool:
     return name in SURFACE_NAMES
 
@@ -613,6 +666,119 @@ def _split_variable_groups(var_names: Sequence[str]) -> Tuple[List[int], List[in
     if not pressure_idx:
         pressure_idx = [i for i, n in enumerate(var_names) if i not in surface_idx]
     return surface_idx, pressure_idx
+
+
+def plot_average_metrics_by_group(
+    out_dir: Path,
+    lead_days: np.ndarray,
+    rmse_weighted: np.ndarray,
+    acc: np.ndarray,
+    var_names: Sequence[str],
+    horizon_days: Sequence[int],
+) -> None:
+    surface_idx, pressure_idx = _split_variable_groups(var_names)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14.5, 5.3), constrained_layout=True)
+
+    axes[0].plot(lead_days, np.mean(rmse_weighted, axis=1), color="#111111", linewidth=2.4, label="All variables")
+    if surface_idx:
+        axes[0].plot(
+            lead_days,
+            np.mean(rmse_weighted[:, surface_idx], axis=1),
+            color="#1f77b4",
+            linewidth=2.2,
+            label="Surface mean",
+        )
+    if pressure_idx:
+        axes[0].plot(
+            lead_days,
+            np.mean(rmse_weighted[:, pressure_idx], axis=1),
+            color="#ff7f0e",
+            linewidth=2.2,
+            label="Pressure mean",
+        )
+    _add_horizon_guides(axes[0], horizon_days)
+    axes[0].set_title("Average latitude-weighted RMSE by group")
+    axes[0].set_xlabel("Lead time (days)")
+    axes[0].set_ylabel("Weighted RMSE")
+    axes[0].legend(frameon=False)
+
+    axes[1].plot(lead_days, np.mean(acc, axis=1), color="#111111", linewidth=2.4, label="All variables")
+    if surface_idx:
+        axes[1].plot(
+            lead_days,
+            np.mean(acc[:, surface_idx], axis=1),
+            color="#1f77b4",
+            linewidth=2.2,
+            label="Surface mean",
+        )
+    if pressure_idx:
+        axes[1].plot(
+            lead_days,
+            np.mean(acc[:, pressure_idx], axis=1),
+            color="#ff7f0e",
+            linewidth=2.2,
+            label="Pressure mean",
+        )
+    _add_horizon_guides(axes[1], horizon_days)
+    axes[1].axhline(0.0, color="black", linewidth=1.0, alpha=0.6)
+    axes[1].set_title("Average ACC by group")
+    axes[1].set_xlabel("Lead time (days)")
+    axes[1].set_ylabel("ACC")
+    axes[1].set_ylim(min(-0.1, float(np.nanmin(acc) - 0.05)), 1.02)
+    axes[1].legend(frameon=False)
+
+    fig.savefig(out_dir / "average_rmse_acc_by_group.png", dpi=240)
+    plt.close(fig)
+
+
+def _auto_scale_rmse_axis(
+    ax: plt.Axes,
+    values: np.ndarray,
+    log_ratio_threshold: float = 40.0,
+) -> bool:
+    arr = np.asarray(values, dtype=np.float64)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return False
+
+    positive = finite[finite > 0.0]
+    if positive.size == 0:
+        return False
+
+    vmin = float(np.nanmin(positive))
+    vmax = float(np.nanmax(positive))
+    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= 0.0:
+        return False
+
+    ratio = vmax / max(vmin, 1e-12)
+    if ratio >= float(log_ratio_threshold):
+        ax.set_yscale("log")
+        y0 = max(vmin * 0.8, 1e-8)
+        y1 = vmax * 1.15
+        if y0 < y1:
+            ax.set_ylim(y0, y1)
+        ax.text(
+            0.99,
+            0.04,
+            "auto log-scale",
+            transform=ax.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=8,
+            color="#666666",
+        )
+        return True
+
+    ymin = float(np.nanmin(finite))
+    ymax = float(np.nanmax(finite))
+    if np.isfinite(ymin) and np.isfinite(ymax):
+        if ymax > ymin:
+            pad = 0.07 * (ymax - ymin)
+        else:
+            pad = 0.10 * (abs(ymin) + 1.0)
+        ax.set_ylim(ymin - pad, ymax + pad)
+    return False
 
 
 def plot_variable_group(
@@ -631,7 +797,11 @@ def plot_variable_group(
     fig, axes = plt.subplots(2, 1, figsize=(12.5, 9.2), constrained_layout=True)
     for idx in indices:
         axes[0].plot(lead_days, rmse_weighted[:, idx], linewidth=1.8, label=var_names[idx])
-    axes[0].set_title(f"{title_prefix}: RMSE")
+    used_log = _auto_scale_rmse_axis(axes[0], rmse_weighted[:, indices])
+    if used_log:
+        axes[0].set_title(f"{title_prefix}: RMSE (log y-scale)")
+    else:
+        axes[0].set_title(f"{title_prefix}: RMSE")
     axes[0].set_xlabel("Lead time (days)")
     axes[0].set_ylabel("RMSE")
     axes[0].legend(frameon=False, fontsize=8, ncol=ncol)
@@ -645,6 +815,163 @@ def plot_variable_group(
     axes[1].legend(frameon=False, fontsize=8, ncol=ncol)
 
     fig.savefig(out_path, dpi=230)
+    plt.close(fig)
+
+
+def plot_all_variable_metrics(
+    out_path: Path,
+    lead_days: np.ndarray,
+    rmse_values: np.ndarray,
+    acc: np.ndarray,
+    var_names: Sequence[str],
+    horizon_days: Sequence[int],
+    rmse_label: str,
+) -> None:
+    if rmse_values.shape[1] != len(var_names) or acc.shape[1] != len(var_names):
+        return
+
+    fig, axes = plt.subplots(2, 1, figsize=(15.8, 10.2), constrained_layout=True)
+    cmap = plt.get_cmap("tab20")
+
+    for idx, name in enumerate(var_names):
+        color = cmap(idx % 20)
+        axes[0].plot(lead_days, rmse_values[:, idx], linewidth=1.45, alpha=0.95, color=color, label=name)
+        axes[1].plot(lead_days, acc[:, idx], linewidth=1.45, alpha=0.95, color=color, label=name)
+
+    used_log = _auto_scale_rmse_axis(axes[0], rmse_values)
+    if used_log:
+        axes[0].set_title(f"All variables: {rmse_label} (log y-scale)")
+    else:
+        axes[0].set_title(f"All variables: {rmse_label}")
+    axes[0].set_xlabel("Lead time (days)")
+    axes[0].set_ylabel(rmse_label)
+    _add_horizon_guides(axes[0], horizon_days)
+
+    axes[1].set_title("All variables: ACC")
+    axes[1].set_xlabel("Lead time (days)")
+    axes[1].set_ylabel("ACC")
+    _add_horizon_guides(axes[1], horizon_days)
+    axes[1].axhline(0.0, color="black", linewidth=1.0, alpha=0.65)
+    axes[1].set_ylim(min(-0.1, float(np.nanmin(acc) - 0.05)), 1.02)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    ncol = 4 if len(labels) > 12 else 3
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.01),
+        ncol=ncol,
+        frameon=False,
+        fontsize=8,
+    )
+
+    fig.savefig(out_path, dpi=240)
+    plt.close(fig)
+
+
+def _choose_grid_cols(n_vars: int, max_cols: int = 5) -> int:
+    if n_vars <= 1:
+        return 1
+    upper = min(max_cols, n_vars)
+    best_cols = 1
+    best_score = None
+    for ncols in range(2, upper + 1):
+        nrows = int(np.ceil(n_vars / ncols))
+        empty = nrows * ncols - n_vars
+        squareness = abs(nrows - ncols)
+        score = (empty, squareness, -ncols)
+        if best_score is None or score < best_score:
+            best_score = score
+            best_cols = ncols
+    return best_cols
+
+
+def plot_all_variable_rmse_overlay(
+    out_path: Path,
+    lead_days: np.ndarray,
+    rmse_values: np.ndarray,
+    var_names: Sequence[str],
+    horizon_days: Sequence[int],
+    title: str,
+    ylabel: str = "RMSE",
+) -> None:
+    if rmse_values.shape[1] != len(var_names):
+        return
+
+    fig, ax = plt.subplots(1, 1, figsize=(15.5, 8.7), constrained_layout=True)
+    cmap = plt.get_cmap("tab20")
+
+    for idx, name in enumerate(var_names):
+        color = cmap(idx % 20)
+        ax.plot(lead_days, rmse_values[:, idx], linewidth=1.6, alpha=0.95, color=color, label=name)
+
+    used_log = _auto_scale_rmse_axis(ax, rmse_values)
+    if used_log:
+        ax.set_title(f"{title} (log y-scale)")
+    else:
+        ax.set_title(title)
+    ax.set_xlabel("Lead time (days)")
+    ax.set_ylabel(ylabel)
+    _add_horizon_guides(ax, horizon_days)
+
+    handles, labels = ax.get_legend_handles_labels()
+    ncol = _choose_grid_cols(len(labels), max_cols=5)
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncol=ncol,
+        frameon=False,
+        fontsize=8,
+    )
+
+    fig.savefig(out_path, dpi=250)
+    plt.close(fig)
+
+
+def plot_all_variable_rmse_panels(
+    out_path: Path,
+    lead_days: np.ndarray,
+    rmse_values: np.ndarray,
+    var_names: Sequence[str],
+    title: str,
+    ylabel: str = "RMSE",
+) -> None:
+    if rmse_values.shape[1] != len(var_names):
+        return
+
+    n_vars = len(var_names)
+    ncols = _choose_grid_cols(n_vars, max_cols=5)
+    nrows = int(np.ceil(n_vars / ncols))
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 2.9 * nrows), squeeze=False)
+    axes_flat = axes.ravel()
+
+    for ax in axes_flat[n_vars:]:
+        ax.axis("off")
+
+    for idx, name in enumerate(var_names):
+        ax = axes_flat[idx]
+        y = rmse_values[:, idx]
+        ax.plot(lead_days, y, color="#1f77b4", linewidth=1.9)
+        ax.set_title(name, fontsize=9)
+        ax.set_xlabel("Lead time (days)")
+        ax.set_ylabel(ylabel)
+
+        ymin = float(np.nanmin(y))
+        ymax = float(np.nanmax(y))
+        if np.isfinite(ymin) and np.isfinite(ymax):
+            if ymax > ymin:
+                pad = 0.08 * (ymax - ymin)
+            else:
+                pad = 0.10 * (abs(ymin) + 1.0)
+            ax.set_ylim(ymin - pad, ymax + pad)
+
+    fig.suptitle(title, fontsize=14)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.98])
+    fig.savefig(out_path, dpi=250)
     plt.close(fig)
 
 
@@ -678,18 +1005,75 @@ def plot_selected_curves(
     ylabel: str,
     title: str,
     out_path: Path,
+    lead_days: Optional[np.ndarray] = None,
+    auto_log_rmse: bool = False,
 ) -> None:
-    lead_days = np.arange(1, values.shape[0] + 1, dtype=np.float64) * 6.0 / 24.0
+    if lead_days is None or lead_days.shape[0] != values.shape[0]:
+        lead_days = np.arange(1, values.shape[0] + 1, dtype=np.float64) * 6.0 / 24.0
+
     plt.figure(figsize=(10.5, 6.0))
     for idx in selected_indices:
         plt.plot(lead_days, values[:, idx], label=var_names[idx], linewidth=2.0)
+
+    used_log = False
+    if auto_log_rmse and selected_indices:
+        used_log = _auto_scale_rmse_axis(plt.gca(), values[:, selected_indices])
+
     plt.xlabel("Lead time (days)")
     plt.ylabel(ylabel)
-    plt.title(title)
+    if used_log:
+        plt.title(f"{title} (log y-scale)")
+    else:
+        plt.title(title)
     plt.legend(frameon=False, fontsize=8, ncol=2)
     plt.tight_layout()
     plt.savefig(out_path, dpi=220)
     plt.close()
+
+
+def plot_selected_small_multiples(
+    values: np.ndarray,
+    var_names: Sequence[str],
+    selected_indices: Sequence[int],
+    ylabel: str,
+    title: str,
+    out_path: Path,
+    lead_days: np.ndarray,
+) -> None:
+    if not selected_indices:
+        return
+
+    n_vars = len(selected_indices)
+    ncols = _choose_grid_cols(n_vars, max_cols=4)
+    nrows = int(np.ceil(n_vars / ncols))
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.6 * ncols, 3.3 * nrows), squeeze=False)
+    axes_flat = axes.ravel()
+
+    for ax in axes_flat[n_vars:]:
+        ax.axis("off")
+
+    for p, idx in enumerate(selected_indices):
+        ax = axes_flat[p]
+        y = values[:, idx]
+        ax.plot(lead_days, y, color="#1f77b4", linewidth=2.0)
+        ax.set_title(var_names[idx], fontsize=10)
+        ax.set_xlabel("Lead time (days)")
+        ax.set_ylabel(ylabel)
+
+        ymin = float(np.nanmin(y))
+        ymax = float(np.nanmax(y))
+        if np.isfinite(ymin) and np.isfinite(ymax):
+            if ymax > ymin:
+                pad = 0.08 * (ymax - ymin)
+            else:
+                pad = 0.10 * (abs(ymin) + 1.0)
+            ax.set_ylim(ymin - pad, ymax + pad)
+
+    fig.suptitle(title, fontsize=14)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.98])
+    fig.savefig(out_path, dpi=230)
+    plt.close(fig)
 
 
 def main() -> None:
@@ -810,6 +1194,75 @@ def main() -> None:
             rmse_unweighted=rmse_unweighted,
             acc=acc,
         )
+        plot_average_metrics(
+            out_dir=metrics_dir,
+            lead_days=lead_days,
+            rmse_weighted=rmse_weighted,
+            rmse_unweighted=rmse_unweighted,
+            acc=acc,
+            horizon_days=args.horizon_days,
+        )
+        plot_average_metrics_by_group(
+            out_dir=metrics_dir,
+            lead_days=lead_days,
+            rmse_weighted=rmse_weighted,
+            acc=acc,
+            var_names=channel_names,
+            horizon_days=args.horizon_days,
+        )
+        plot_all_variable_metrics(
+            out_path=metrics_dir / "all_variable_rmse_acc.png",
+            lead_days=lead_days,
+            rmse_values=rmse_unweighted,
+            acc=acc,
+            var_names=channel_names,
+            horizon_days=args.horizon_days,
+            rmse_label="RMSE",
+        )
+        plot_all_variable_metrics(
+            out_path=metrics_dir / "per_variable_rmse_acc.png",
+            lead_days=lead_days,
+            rmse_values=rmse_unweighted,
+            acc=acc,
+            var_names=channel_names,
+            horizon_days=args.horizon_days,
+            rmse_label="RMSE",
+        )
+        plot_all_variable_metrics(
+            out_path=metrics_dir / "all_variable_weighted_rmse_acc.png",
+            lead_days=lead_days,
+            rmse_values=rmse_weighted,
+            acc=acc,
+            var_names=channel_names,
+            horizon_days=args.horizon_days,
+            rmse_label="Latitude-weighted RMSE",
+        )
+        plot_all_variable_metrics(
+            out_path=metrics_dir / "per_variable_weighted_rmse_acc.png",
+            lead_days=lead_days,
+            rmse_values=rmse_weighted,
+            acc=acc,
+            var_names=channel_names,
+            horizon_days=args.horizon_days,
+            rmse_label="Latitude-weighted RMSE",
+        )
+        plot_all_variable_rmse_overlay(
+            out_path=metrics_dir / "poster_all20_rmse_overlay.png",
+            lead_days=lead_days,
+            rmse_values=rmse_unweighted,
+            var_names=channel_names,
+            horizon_days=args.horizon_days,
+            title="RMSE (all 20 variables)",
+            ylabel="RMSE",
+        )
+        plot_all_variable_rmse_panels(
+            out_path=metrics_dir / "poster_all20_rmse_per_variable.png",
+            lead_days=lead_days,
+            rmse_values=rmse_unweighted,
+            var_names=channel_names,
+            title="RMSE (unweighted): all 20 variable panels",
+            ylabel="RMSE",
+        )
 
         surface_idx, pressure_idx = _split_variable_groups(channel_names)
         plot_variable_group(
@@ -835,12 +1288,24 @@ def main() -> None:
 
         selected = select_plot_indices(channel_names, args.plot_vars)
         plot_selected_curves(
-            values=rmse_weighted,
+            values=rmse_unweighted,
             var_names=channel_names,
             selected_indices=selected,
             ylabel="RMSE",
-            title="RMSE vs lead time (selected variables)",
+            title="RMSE (unweighted) vs lead time (selected variables)",
             out_path=metrics_dir / "selected_rmse_curves.png",
+            lead_days=lead_days,
+            auto_log_rmse=True,
+        )
+        plot_selected_curves(
+            values=rmse_weighted,
+            var_names=channel_names,
+            selected_indices=selected,
+            ylabel="Latitude-weighted RMSE",
+            title="Latitude-weighted RMSE vs lead time (selected variables)",
+            out_path=metrics_dir / "selected_weighted_rmse_curves.png",
+            lead_days=lead_days,
+            auto_log_rmse=True,
         )
         plot_selected_curves(
             values=acc,
@@ -849,6 +1314,35 @@ def main() -> None:
             ylabel="ACC",
             title="ACC vs lead time (selected variables)",
             out_path=metrics_dir / "selected_acc_curves.png",
+            lead_days=lead_days,
+        )
+
+        plot_selected_small_multiples(
+            values=rmse_unweighted,
+            var_names=channel_names,
+            selected_indices=selected,
+            ylabel="RMSE",
+            title="RMSE (unweighted): per-variable panels",
+            out_path=metrics_dir / "selected_rmse_small_multiples.png",
+            lead_days=lead_days,
+        )
+        plot_selected_small_multiples(
+            values=rmse_weighted,
+            var_names=channel_names,
+            selected_indices=selected,
+            ylabel="Latitude-weighted RMSE",
+            title="Latitude-weighted RMSE: per-variable panels",
+            out_path=metrics_dir / "selected_weighted_rmse_small_multiples.png",
+            lead_days=lead_days,
+        )
+        plot_selected_small_multiples(
+            values=acc,
+            var_names=channel_names,
+            selected_indices=selected,
+            ylabel="ACC",
+            title="ACC: per-variable panels",
+            out_path=metrics_dir / "selected_acc_small_multiples.png",
+            lead_days=lead_days,
         )
 
         summary = {

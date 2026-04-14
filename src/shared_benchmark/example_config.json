@@ -1,0 +1,31 @@
+{
+    "results_root": "results_shared",
+    "horizon_days": [
+        5,
+        10,
+        15
+    ],
+    "compute_l1": true,
+    "strict_consistency": true,
+    "eval_no_heatmaps": true,
+    "overwrite_eval": true,
+    "climatology_store": "data/climatology/1990-2019_6h_240x121_equiangular_with_poles_conservative_MWE.zarr",
+    "models": [
+        {
+            "name": "fuxi_emb768",
+            "forecast_file": "results_new/checkpoint_emb768/forecast/forecast.nc"
+        },
+        {
+            "name": "fuxi_emb1024",
+            "forecast_file": "results_new/checkpoint_emb1024/forecast/forecast.nc"
+        },
+        {
+            "name": "pangu_team",
+            "forecast_file": "/path/to/pangu_forecast.nc"
+        },
+        {
+            "name": "graphcast_team",
+            "forecast_file": "/path/to/graphcast_forecast.nc"
+        }
+    ]
+}
