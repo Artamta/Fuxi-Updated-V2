@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """
-Evaluate forecast NetCDF files with RMSE, latitude-weighted RMSE, and ACC.
+Evaluate forecast NetCDF files with latitude-weighted RMSE and ACC.
 
 Expected forecast file format:
 - dims: init_time, lead_step, channel, lat, lon
 - data vars: forecast, truth
 - coord: channel_name
+
+Metric formulas implemented (matching FuXi paper equations):
+RMSE(c, tau) = (1 / |D|) * sum_{t0 in D} sqrt((1 / (H * W)) * sum_{i,j} a_i * (Xhat - X)^2)
+ACC(c, tau)  = (1 / |D|) * sum_{t0 in D}
+              [sum_{i,j} a_i * (Xhat - M) * (X - M)] /
+              sqrt(sum_{i,j} a_i * (Xhat - M)^2 * sum_{i,j} a_i * (X - M)^2)
+where a_i = cos(lat_i) normalized to mean(a_i)=1.
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ try:
         DEFAULT_RESULTS_ROOT,
         build_checkpoint_dirs,
         discover_forecasts,
+        parse_csv_ints,
         parse_csv_strings,
         parse_forecast_specs,
     )
@@ -41,6 +49,7 @@ except ImportError:
         DEFAULT_RESULTS_ROOT,
         build_checkpoint_dirs,
         discover_forecasts,
+        parse_csv_ints,
         parse_csv_strings,
         parse_forecast_specs,
     )
@@ -51,9 +60,36 @@ except ImportError:
     from src.evaluation.evaluate_checkpoint import PRESSURE_VAR_ALIASES, SURFACE_VAR_ALIASES
 
 
+SURFACE_NAMES = {
+    "2m_temperature",
+    "10m_u_component_of_wind",
+    "10m_v_component_of_wind",
+    "surface_pressure",
+    "mean_sea_level_pressure",
+    "total_column_water_vapour",
+}
+
+
+def set_plot_style() -> None:
+    plt.rcParams.update(
+        {
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
+            "axes.grid": True,
+            "grid.alpha": 0.24,
+            "grid.linestyle": "-",
+            "font.size": 11,
+            "axes.titlesize": 12,
+            "axes.labelsize": 11,
+            "legend.fontsize": 9,
+            "figure.dpi": 120,
+        }
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Evaluate forecast NetCDFs using ACC, RMSE, and latitude-weighted RMSE.",
+        description="Evaluate forecast NetCDFs using FuXi-style latitude-weighted RMSE and ACC.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -74,6 +110,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=parse_csv_strings,
         default=None,
         help="Selected variables for lead-time curve figures",
+    )
+    parser.add_argument(
+        "--horizon-days",
+        type=parse_csv_ints,
+        default=[5, 10, 15],
+        help="Horizon windows (days) for summary metrics, e.g. 5,10,15",
     )
     parser.add_argument("--no-heatmaps", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
@@ -155,14 +197,15 @@ class HourlyClimatologyAccessor:
             level = int(level_txt)
             var_name = self._resolve_var(base)
             if level not in self.level_to_idx:
-                raise ValueError(f"Pressure level {level} missing in climatology levels={sorted(self.level_to_idx.keys())}")
+                raise ValueError(
+                    f"Pressure level {level} missing in climatology levels={sorted(self.level_to_idx.keys())}"
+                )
             return ChannelClimoRef(variable=var_name, level_index=self.level_to_idx[level])
 
         var_name = self._resolve_var(name)
         return ChannelClimoRef(variable=var_name, level_index=None)
 
     def _hour_index(self, hour: int) -> int:
-        # Nearest available hour in climatology set (typically 0,6,12,18).
         deltas = np.abs(self.hour_values - int(hour))
         return int(np.argmin(deltas))
 
@@ -243,7 +286,7 @@ def open_dataset_with_fallback(path: Path) -> xr.Dataset:
 def evaluate_one_file(
     forecast_path: Path,
     climo_accessor: HourlyClimatologyAccessor,
-) -> Tuple[List[str], np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[List[str], np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     ds = open_dataset_with_fallback(forecast_path)
     try:
         forecast = ds["forecast"].values.astype(np.float64)
@@ -262,11 +305,11 @@ def evaluate_one_file(
     finally:
         ds.close()
 
-    n_init, n_steps, n_channels, _, _ = forecast.shape
+    n_init, n_steps, n_channels, h, w = forecast.shape
     lat_w = build_latitude_weights(latitudes)
 
-    rmse_sum = np.zeros((n_steps, n_channels), dtype=np.float64)
-    wrmse_sum = np.zeros((n_steps, n_channels), dtype=np.float64)
+    rmse_weighted_sum = np.zeros((n_steps, n_channels), dtype=np.float64)
+    rmse_unweighted_sum = np.zeros((n_steps, n_channels), dtype=np.float64)
     acc_sum = np.zeros((n_steps, n_channels), dtype=np.float64)
     count = np.zeros((n_steps,), dtype=np.float64)
 
@@ -279,13 +322,14 @@ def evaluate_one_file(
 
             pred = forecast[i, s]
             tgt = truth[i, s]
-
             err = pred - tgt
-            mse = np.mean(err * err, axis=(1, 2))
-            wmse = np.mean(err * err * lat_w, axis=(1, 2))
+            err_sq = err * err
 
-            rmse = np.sqrt(np.maximum(mse, 1e-12))
-            wrmse = np.sqrt(np.maximum(wmse, 1e-12))
+            weighted_mse = np.sum(err_sq * lat_w, axis=(1, 2)) / float(h * w)
+            unweighted_mse = np.mean(err_sq, axis=(1, 2))
+
+            rmse_weighted = np.sqrt(np.maximum(weighted_mse, 1e-12))
+            rmse_unweighted = np.sqrt(np.maximum(unweighted_mse, 1e-12))
 
             pred_anom = pred - clim
             tgt_anom = tgt - clim
@@ -297,8 +341,8 @@ def evaluate_one_file(
             )
             acc = np.clip(num / den, -1.0, 1.0)
 
-            rmse_sum[s] += rmse
-            wrmse_sum[s] += wrmse
+            rmse_weighted_sum[s] += rmse_weighted
+            rmse_unweighted_sum[s] += rmse_unweighted
             acc_sum[s] += acc
             count[s] += 1.0
 
@@ -307,18 +351,24 @@ def evaluate_one_file(
             denom = max(count[step1], 1.0)
             print(
                 f"[eval] init {i+1}/{n_init} | "
-                f"step1_rmse={float(rmse_sum[step1].mean()/denom):.4f} | "
-                f"step1_wrmse={float(wrmse_sum[step1].mean()/denom):.4f} | "
+                f"step1_rmse={float(rmse_weighted_sum[step1].mean()/denom):.4f} | "
                 f"step1_acc={float(acc_sum[step1].mean()/denom):.4f}",
                 flush=True,
             )
 
     denom = np.clip(count[:, None], 1.0, None)
-    rmse_mean = rmse_sum / denom
-    wrmse_mean = wrmse_sum / denom
+    rmse_weighted_mean = rmse_weighted_sum / denom
+    rmse_unweighted_mean = rmse_unweighted_sum / denom
     acc_mean = acc_sum / denom
 
-    return channel_names, lead_steps, lead_hours, rmse_mean, wrmse_mean, acc_mean
+    return (
+        channel_names,
+        lead_steps,
+        lead_hours,
+        rmse_weighted_mean,
+        rmse_unweighted_mean,
+        acc_mean,
+    )
 
 
 def write_metric_csvs(
@@ -326,8 +376,8 @@ def write_metric_csvs(
     channel_names: Sequence[str],
     lead_steps: np.ndarray,
     lead_hours: np.ndarray,
-    rmse: np.ndarray,
-    wrmse: np.ndarray,
+    rmse_weighted: np.ndarray,
+    rmse_unweighted: np.ndarray,
     acc: np.ndarray,
 ) -> None:
     lead_days = lead_hours.astype(np.float64) / 24.0
@@ -335,7 +385,18 @@ def write_metric_csvs(
     per_lead = out_dir / "metrics_per_lead.csv"
     with per_lead.open("w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["variable", "lead_step", "lead_hour", "lead_day", "rmse", "rmse_lat_weighted", "acc"])
+        writer.writerow(
+            [
+                "variable",
+                "lead_step",
+                "lead_hour",
+                "lead_day",
+                "rmse",
+                "rmse_unweighted",
+                "rmse_lat_weighted",
+                "acc",
+            ]
+        )
         for vi, var in enumerate(channel_names):
             for si in range(lead_steps.shape[0]):
                 writer.writerow(
@@ -344,18 +405,18 @@ def write_metric_csvs(
                         int(lead_steps[si]),
                         int(lead_hours[si]),
                         float(lead_days[si]),
-                        float(rmse[si, vi]),
-                        float(wrmse[si, vi]),
+                        float(rmse_weighted[si, vi]),
+                        float(rmse_unweighted[si, vi]),
+                        float(rmse_weighted[si, vi]),
                         float(acc[si, vi]),
                     ]
                 )
 
-    # 4 lead-steps/day for 6-hourly data.
     per_day = out_dir / "metrics_per_day.csv"
     n_days = int(lead_steps.shape[0] // 4)
     with per_day.open("w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["variable", "day", "rmse_mean", "rmse_lat_weighted_mean", "acc_mean"])
+        writer.writerow(["variable", "day", "rmse_mean", "rmse_unweighted_mean", "acc_mean"])
         for vi, var in enumerate(channel_names):
             for d in range(n_days):
                 s0 = d * 4
@@ -364,49 +425,227 @@ def write_metric_csvs(
                     [
                         var,
                         d + 1,
-                        float(np.mean(rmse[s0:s1, vi])),
-                        float(np.mean(wrmse[s0:s1, vi])),
+                        float(np.mean(rmse_weighted[s0:s1, vi])),
+                        float(np.mean(rmse_unweighted[s0:s1, vi])),
                         float(np.mean(acc[s0:s1, vi])),
                     ]
                 )
 
 
+def write_mean_metric_csv(
+    out_dir: Path,
+    lead_steps: np.ndarray,
+    lead_hours: np.ndarray,
+    rmse_weighted: np.ndarray,
+    rmse_unweighted: np.ndarray,
+    acc: np.ndarray,
+) -> None:
+    per_lead = out_dir / "mean_metrics_per_lead.csv"
+    lead_days = lead_hours.astype(np.float64) / 24.0
+
+    rmse_mean = np.mean(rmse_weighted, axis=1)
+    rmse_std = np.std(rmse_weighted, axis=1)
+    rmse_unw_mean = np.mean(rmse_unweighted, axis=1)
+    acc_mean = np.mean(acc, axis=1)
+    acc_std = np.std(acc, axis=1)
+
+    with per_lead.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "lead_step",
+                "lead_hour",
+                "lead_day",
+                "rmse_mean_over_variables",
+                "rmse_std_over_variables",
+                "rmse_unweighted_mean_over_variables",
+                "acc_mean_over_variables",
+                "acc_std_over_variables",
+            ]
+        )
+        for i in range(lead_steps.shape[0]):
+            writer.writerow(
+                [
+                    int(lead_steps[i]),
+                    int(lead_hours[i]),
+                    float(lead_days[i]),
+                    float(rmse_mean[i]),
+                    float(rmse_std[i]),
+                    float(rmse_unw_mean[i]),
+                    float(acc_mean[i]),
+                    float(acc_std[i]),
+                ]
+            )
+
+
+def write_horizon_summary(
+    out_dir: Path,
+    horizon_days: Sequence[int],
+    rmse_weighted: np.ndarray,
+    rmse_unweighted: np.ndarray,
+    acc: np.ndarray,
+) -> Dict[str, Dict[str, float]]:
+    rows = []
+    summary: Dict[str, Dict[str, float]] = {}
+
+    for day in sorted(set(int(d) for d in horizon_days if int(d) > 0)):
+        max_step = min(rmse_weighted.shape[0], day * 4)
+        if max_step <= 0:
+            continue
+        sl = slice(0, max_step)
+        row = {
+            "horizon_day": float(day),
+            "max_lead_step": float(max_step),
+            "rmse_mean": float(np.mean(rmse_weighted[sl, :])),
+            "rmse_unweighted_mean": float(np.mean(rmse_unweighted[sl, :])),
+            "acc_mean": float(np.mean(acc[sl, :])),
+        }
+        rows.append(row)
+        summary[str(day)] = {
+            "rmse_mean": row["rmse_mean"],
+            "rmse_unweighted_mean": row["rmse_unweighted_mean"],
+            "acc_mean": row["acc_mean"],
+            "max_lead_step": row["max_lead_step"],
+        }
+
+    out_csv = out_dir / "horizon_window_summary.csv"
+    with out_csv.open("w", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "horizon_day",
+                "max_lead_step",
+                "rmse_mean",
+                "rmse_unweighted_mean",
+                "acc_mean",
+            ],
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    return summary
+
+
+def write_formula_note(out_dir: Path) -> None:
+    text = []
+    text.append("FuXi-style evaluation formulas used in this run")
+    text.append("")
+    text.append("Latitude weight:")
+    text.append("  a_i = cos(lat_i) / mean_i(cos(lat_i))")
+    text.append("")
+    text.append("RMSE(c, tau):")
+    text.append("  RMSE(c, tau) = (1/|D|) * sum_{t0 in D} sqrt((1/(H*W)) * sum_{i,j} a_i * (Xhat - X)^2)")
+    text.append("")
+    text.append("ACC(c, tau):")
+    text.append("  ACC(c, tau) = (1/|D|) * sum_{t0 in D} [num / den]")
+    text.append("  num = sum_{i,j} a_i * (Xhat - M) * (X - M)")
+    text.append("  den = sqrt(sum_{i,j} a_i * (Xhat - M)^2 * sum_{i,j} a_i * (X - M)^2)")
+    text.append("")
+    text.append("Implementation detail:")
+    text.append("  - M is time-dependent climatology map indexed by valid time (dayofyear, hour).")
+    text.append("  - Mean over D is done after computing per-init-time RMSE/ACC for each lead.")
+    (out_dir / "metrics_formula.txt").write_text("\n".join(text) + "\n")
+
+
 def plot_heatmap(values: np.ndarray, var_names: Sequence[str], title: str, cmap: str, out_path: Path, vmin=None, vmax=None) -> None:
-    plt.figure(figsize=(14, max(6, len(var_names) * 0.35)))
+    plt.figure(figsize=(15, max(6.2, len(var_names) * 0.35)))
     im = plt.imshow(values.T, aspect="auto", origin="lower", cmap=cmap, vmin=vmin, vmax=vmax)
     plt.colorbar(im, fraction=0.02, pad=0.02)
-    xticks = np.arange(values.shape[0])
-    xlabels = [f"{(i + 1) * 6 / 24:.2f}" for i in xticks]
-    plt.xticks(xticks[::4], xlabels[::4], rotation=0)
+    x_ticks = np.arange(values.shape[0])
+    x_labels = [f"{(i + 1) * 6 / 24:.2f}" for i in x_ticks]
+    plt.xticks(x_ticks[::4], x_labels[::4], rotation=0)
     plt.yticks(np.arange(len(var_names)), var_names)
     plt.xlabel("Lead time (days)")
     plt.ylabel("Variable")
     plt.title(title)
     plt.tight_layout()
-    plt.savefig(out_path, dpi=180)
+    plt.savefig(out_path, dpi=220)
     plt.close()
 
 
-def plot_selected_curves(
-    values: np.ndarray,
-    var_names: Sequence[str],
-    selected_indices: Sequence[int],
-    ylabel: str,
-    title: str,
-    out_path: Path,
+def plot_overall_rollout(
+    out_dir: Path,
+    lead_days: np.ndarray,
+    rmse_weighted: np.ndarray,
+    rmse_unweighted: np.ndarray,
+    acc: np.ndarray,
 ) -> None:
-    lead_days = np.arange(1, values.shape[0] + 1) * 6 / 24.0
-    plt.figure(figsize=(10, 6))
-    for idx in selected_indices:
-        plt.plot(lead_days, values[:, idx], label=var_names[idx], linewidth=1.8)
-    plt.xlabel("Lead time (days)")
-    plt.ylabel(ylabel)
-    plt.title(title)
-    plt.grid(alpha=0.3)
-    plt.legend(fontsize=8, ncol=2)
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=180)
-    plt.close()
+    rmse_mean = np.mean(rmse_weighted, axis=1)
+    rmse_std = np.std(rmse_weighted, axis=1)
+    rmse_unw_mean = np.mean(rmse_unweighted, axis=1)
+    acc_mean = np.mean(acc, axis=1)
+    acc_std = np.std(acc, axis=1)
+
+    fig, axes = plt.subplots(1, 3, figsize=(16.8, 5.2), constrained_layout=True)
+
+    axes[0].plot(lead_days, rmse_mean, color="#1f77b4", linewidth=2.4, label="RMSE mean")
+    axes[0].fill_between(lead_days, rmse_mean - rmse_std, rmse_mean + rmse_std, color="#1f77b4", alpha=0.18)
+    axes[0].set_title("Mean RMSE over variables")
+    axes[0].set_xlabel("Lead time (days)")
+    axes[0].set_ylabel("RMSE")
+    axes[0].legend(frameon=False)
+
+    axes[1].plot(lead_days, rmse_unw_mean, color="#2ca02c", linewidth=2.3, label="RMSE unweighted mean")
+    axes[1].set_title("Mean RMSE unweighted")
+    axes[1].set_xlabel("Lead time (days)")
+    axes[1].set_ylabel("RMSE")
+    axes[1].legend(frameon=False)
+
+    axes[2].plot(lead_days, acc_mean, color="#d62728", linewidth=2.4, label="ACC mean")
+    axes[2].fill_between(lead_days, acc_mean - acc_std, acc_mean + acc_std, color="#d62728", alpha=0.18)
+    axes[2].axhline(0.0, color="black", linewidth=1.0, alpha=0.7)
+    axes[2].set_title("Mean ACC over variables")
+    axes[2].set_xlabel("Lead time (days)")
+    axes[2].set_ylabel("ACC")
+    axes[2].legend(frameon=False)
+
+    fig.savefig(out_dir / "overall_mean_rollout_metrics.png", dpi=240)
+    plt.close(fig)
+
+
+def _is_surface_name(name: str) -> bool:
+    return name in SURFACE_NAMES
+
+
+def _split_variable_groups(var_names: Sequence[str]) -> Tuple[List[int], List[int]]:
+    surface_idx = [i for i, n in enumerate(var_names) if _is_surface_name(n)]
+    pressure_idx = [i for i, n in enumerate(var_names) if "_plev" in n]
+    if not pressure_idx:
+        pressure_idx = [i for i, n in enumerate(var_names) if i not in surface_idx]
+    return surface_idx, pressure_idx
+
+
+def plot_variable_group(
+    out_path: Path,
+    lead_days: np.ndarray,
+    rmse_weighted: np.ndarray,
+    acc: np.ndarray,
+    var_names: Sequence[str],
+    indices: Sequence[int],
+    title_prefix: str,
+    ncol: int,
+) -> None:
+    if not indices:
+        return
+
+    fig, axes = plt.subplots(2, 1, figsize=(12.5, 9.2), constrained_layout=True)
+    for idx in indices:
+        axes[0].plot(lead_days, rmse_weighted[:, idx], linewidth=1.8, label=var_names[idx])
+    axes[0].set_title(f"{title_prefix}: RMSE")
+    axes[0].set_xlabel("Lead time (days)")
+    axes[0].set_ylabel("RMSE")
+    axes[0].legend(frameon=False, fontsize=8, ncol=ncol)
+
+    for idx in indices:
+        axes[1].plot(lead_days, acc[:, idx], linewidth=1.8, label=var_names[idx])
+    axes[1].axhline(0.0, color="black", linewidth=1.0, alpha=0.7)
+    axes[1].set_title(f"{title_prefix}: ACC")
+    axes[1].set_xlabel("Lead time (days)")
+    axes[1].set_ylabel("ACC")
+    axes[1].legend(frameon=False, fontsize=8, ncol=ncol)
+
+    fig.savefig(out_path, dpi=230)
+    plt.close(fig)
 
 
 def select_plot_indices(var_names: Sequence[str], requested: Optional[Sequence[str]]) -> List[int]:
@@ -432,8 +671,31 @@ def select_plot_indices(var_names: Sequence[str], requested: Optional[Sequence[s
     return selected
 
 
+def plot_selected_curves(
+    values: np.ndarray,
+    var_names: Sequence[str],
+    selected_indices: Sequence[int],
+    ylabel: str,
+    title: str,
+    out_path: Path,
+) -> None:
+    lead_days = np.arange(1, values.shape[0] + 1, dtype=np.float64) * 6.0 / 24.0
+    plt.figure(figsize=(10.5, 6.0))
+    for idx in selected_indices:
+        plt.plot(lead_days, values[:, idx], label=var_names[idx], linewidth=2.0)
+    plt.xlabel("Lead time (days)")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend(frameon=False, fontsize=8, ncol=2)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=220)
+    plt.close()
+
+
 def main() -> None:
     args = build_parser().parse_args()
+    set_plot_style()
+
     results_root = Path(args.results_root).expanduser().resolve()
 
     if args.forecast_files is not None and len(args.forecast_files) > 0:
@@ -478,33 +740,58 @@ def main() -> None:
             longitudes=longitudes,
         )
 
-        channel_names, lead_steps, lead_hours, rmse, wrmse, acc = evaluate_one_file(fc.path, climo_accessor)
+        (
+            channel_names,
+            lead_steps,
+            lead_hours,
+            rmse_weighted,
+            rmse_unweighted,
+            acc,
+        ) = evaluate_one_file(fc.path, climo_accessor)
 
+        lead_days = lead_hours.astype(np.float64) / 24.0
         metrics_dir.mkdir(parents=True, exist_ok=True)
+
         write_metric_csvs(
             out_dir=metrics_dir,
             channel_names=channel_names,
             lead_steps=lead_steps,
             lead_hours=lead_hours,
-            rmse=rmse,
-            wrmse=wrmse,
+            rmse_weighted=rmse_weighted,
+            rmse_unweighted=rmse_unweighted,
             acc=acc,
         )
+        write_mean_metric_csv(
+            out_dir=metrics_dir,
+            lead_steps=lead_steps,
+            lead_hours=lead_hours,
+            rmse_weighted=rmse_weighted,
+            rmse_unweighted=rmse_unweighted,
+            acc=acc,
+        )
+        horizon_summary = write_horizon_summary(
+            out_dir=metrics_dir,
+            horizon_days=args.horizon_days,
+            rmse_weighted=rmse_weighted,
+            rmse_unweighted=rmse_unweighted,
+            acc=acc,
+        )
+        write_formula_note(metrics_dir)
 
         if not args.no_heatmaps:
             plot_heatmap(
-                values=rmse,
+                values=rmse_weighted,
                 var_names=channel_names,
-                title="RMSE by variable and lead time",
+                title="RMSE (latitude-weighted) by variable and lead time",
                 cmap="viridis",
                 out_path=metrics_dir / "rmse_heatmap.png",
             )
             plot_heatmap(
-                values=wrmse,
+                values=rmse_unweighted,
                 var_names=channel_names,
-                title="Latitude-weighted RMSE by variable and lead time",
-                cmap="magma",
-                out_path=metrics_dir / "weighted_rmse_heatmap.png",
+                title="RMSE (unweighted) by variable and lead time",
+                cmap="plasma",
+                out_path=metrics_dir / "rmse_unweighted_heatmap.png",
             )
             plot_heatmap(
                 values=acc,
@@ -516,22 +803,44 @@ def main() -> None:
                 vmax=1.0,
             )
 
+        plot_overall_rollout(
+            out_dir=metrics_dir,
+            lead_days=lead_days,
+            rmse_weighted=rmse_weighted,
+            rmse_unweighted=rmse_unweighted,
+            acc=acc,
+        )
+
+        surface_idx, pressure_idx = _split_variable_groups(channel_names)
+        plot_variable_group(
+            out_path=metrics_dir / "surface_variable_metrics.png",
+            lead_days=lead_days,
+            rmse_weighted=rmse_weighted,
+            acc=acc,
+            var_names=channel_names,
+            indices=surface_idx,
+            title_prefix="Surface variables",
+            ncol=2,
+        )
+        plot_variable_group(
+            out_path=metrics_dir / "pressure_15_variable_metrics.png",
+            lead_days=lead_days,
+            rmse_weighted=rmse_weighted,
+            acc=acc,
+            var_names=channel_names,
+            indices=pressure_idx,
+            title_prefix="Pressure variables (15 channels)",
+            ncol=3,
+        )
+
         selected = select_plot_indices(channel_names, args.plot_vars)
         plot_selected_curves(
-            values=rmse,
+            values=rmse_weighted,
             var_names=channel_names,
             selected_indices=selected,
             ylabel="RMSE",
             title="RMSE vs lead time (selected variables)",
             out_path=metrics_dir / "selected_rmse_curves.png",
-        )
-        plot_selected_curves(
-            values=wrmse,
-            var_names=channel_names,
-            selected_indices=selected,
-            ylabel="Latitude-weighted RMSE",
-            title="Latitude-weighted RMSE vs lead time (selected variables)",
-            out_path=metrics_dir / "selected_weighted_rmse_curves.png",
         )
         plot_selected_curves(
             values=acc,
@@ -549,19 +858,11 @@ def main() -> None:
             "variables": channel_names,
             "rollout_steps": int(lead_steps.shape[0]),
             "lead_hours": lead_hours.astype(int).tolist(),
-            "mean_rmse": float(np.mean(rmse)),
-            "mean_rmse_lat_weighted": float(np.mean(wrmse)),
+            "mean_rmse": float(np.mean(rmse_weighted)),
+            "mean_rmse_unweighted": float(np.mean(rmse_unweighted)),
             "mean_acc": float(np.mean(acc)),
             "best_acc": float(np.max(acc)),
-            "rmse_day_5_mean": float(np.mean(rmse[19, :])) if lead_steps.shape[0] >= 20 else float(np.mean(rmse[-1, :])),
-            "wrmse_day_5_mean": float(np.mean(wrmse[19, :])) if lead_steps.shape[0] >= 20 else float(np.mean(wrmse[-1, :])),
-            "acc_day_5_mean": float(np.mean(acc[19, :])) if lead_steps.shape[0] >= 20 else float(np.mean(acc[-1, :])),
-            "rmse_day_10_mean": float(np.mean(rmse[39, :])) if lead_steps.shape[0] >= 40 else float(np.mean(rmse[-1, :])),
-            "wrmse_day_10_mean": float(np.mean(wrmse[39, :])) if lead_steps.shape[0] >= 40 else float(np.mean(wrmse[-1, :])),
-            "acc_day_10_mean": float(np.mean(acc[39, :])) if lead_steps.shape[0] >= 40 else float(np.mean(acc[-1, :])),
-            "rmse_day_15_mean": float(np.mean(rmse[59, :])) if lead_steps.shape[0] >= 60 else float(np.mean(rmse[-1, :])),
-            "wrmse_day_15_mean": float(np.mean(wrmse[59, :])) if lead_steps.shape[0] >= 60 else float(np.mean(wrmse[-1, :])),
-            "acc_day_15_mean": float(np.mean(acc[59, :])) if lead_steps.shape[0] >= 60 else float(np.mean(acc[-1, :])),
+            "horizon_summary": horizon_summary,
             "climatology_store": str(Path(args.climatology_store).expanduser().resolve()),
         }
         with summary_path.open("w") as f:
@@ -569,7 +870,7 @@ def main() -> None:
 
         print(
             f"  mean_rmse={summary['mean_rmse']:.6f} | "
-            f"mean_wrmse={summary['mean_rmse_lat_weighted']:.6f} | "
+            f"mean_rmse_unweighted={summary['mean_rmse_unweighted']:.6f} | "
             f"mean_acc={summary['mean_acc']:.6f}"
         )
 

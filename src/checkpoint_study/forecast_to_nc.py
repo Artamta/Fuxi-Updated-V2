@@ -3,9 +3,12 @@
 Generate autoregressive FuXi forecasts from saved checkpoints and write NetCDF outputs.
 
 For each checkpoint, this script writes:
-- results_new/checkpoint_<name>/forecast/forecast.nc
+- results_new/checkpoint_<name>/forecast/<forecast-file-name>
 - results_new/checkpoint_<name>/forecast/day1_forecast.png
+- results_new/checkpoint_<name>/forecast/t2m_rollout_panels.png
 - results_new/checkpoint_<name>/forecast/forecast_metadata.json
+
+LoRA checkpoints are supported via automatic detection or explicit --enable-lora.
 """
 
 from __future__ import annotations
@@ -25,6 +28,15 @@ from torch.utils.data import DataLoader, Dataset
 import xarray as xr
 
 try:
+    from peft import LoraConfig, get_peft_model
+
+    PEFT_AVAILABLE = True
+except Exception:
+    LoraConfig = None
+    get_peft_model = None
+    PEFT_AVAILABLE = False
+
+try:
     from .common import (
         DEFAULT_RESULTS_ROOT,
         build_checkpoint_dirs,
@@ -42,6 +54,11 @@ except ImportError:
     )
 
 try:
+    from ..models.fuxi_model import FuXi
+except ImportError:
+    from src.models.fuxi_model import FuXi
+
+try:
     from ..evaluation.evaluate_checkpoint import (
         DEFAULT_PRESSURE_LEVELS,
         DEFAULT_PRESSURE_VARS,
@@ -50,7 +67,6 @@ try:
         DataSpec,
         WB2Accessor,
         autocast_ctx,
-        build_model,
         choose_device,
         compute_channel_stats,
         resolve_variable_names,
@@ -64,10 +80,30 @@ except ImportError:
         DataSpec,
         WB2Accessor,
         autocast_ctx,
-        build_model,
         choose_device,
         compute_channel_stats,
         resolve_variable_names,
+    )
+
+
+DEFAULT_LORA_TARGET_MODULES = ["qkv", "proj", "fc1", "fc2"]
+
+
+def set_plot_style() -> None:
+    plt.rcParams.update(
+        {
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
+            "axes.edgecolor": "#222222",
+            "axes.grid": True,
+            "grid.alpha": 0.22,
+            "grid.linestyle": "-",
+            "font.size": 11,
+            "axes.titlesize": 12,
+            "axes.labelsize": 11,
+            "legend.fontsize": 9,
+            "figure.dpi": 120,
+        }
     )
 
 
@@ -118,18 +154,36 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--device", type=str, choices=["auto", "cuda", "cpu"], default="auto")
     parser.add_argument("--amp", type=str, choices=["none", "fp16", "bf16"], default="bf16")
+
     parser.add_argument(
         "--day1-plot-vars",
         type=parse_csv_strings,
         default=None,
         help="Variables to include in day-1 plot",
     )
+    parser.add_argument("--skip-day1-plot", action="store_true")
+    parser.add_argument("--skip-t2m-plot", action="store_true")
+    parser.add_argument("--t2m-var-name", type=str, default="2m_temperature")
+    parser.add_argument("--t2m-plot-days", type=parse_csv_ints, default=[1, 5, 10, 15])
     parser.add_argument(
         "--max-output-gb",
         type=float,
         default=8.0,
         help="Safety limit for in-memory output arrays (forecast + truth)",
     )
+
+    parser.add_argument("--enable-lora", action="store_true", help="Force LoRA loading path")
+    parser.add_argument(
+        "--lora-base-checkpoint",
+        type=str,
+        default=None,
+        help="Optional base checkpoint for LoRA inference if adapter checkpoint does not include base_model_state",
+    )
+    parser.add_argument("--lora-rank", type=int, default=None)
+    parser.add_argument("--lora-alpha", type=float, default=None)
+    parser.add_argument("--lora-dropout", type=float, default=None)
+    parser.add_argument("--lora-target-modules", type=parse_csv_strings, default=None)
+    parser.add_argument("--lora-bias", type=str, default=None)
     return parser
 
 
@@ -140,7 +194,19 @@ def _cfg_num(cfg: Dict, name: str, default, cast):
     return cast(val)
 
 
-def resolve_spec_for_checkpoint(checkpoint_path: str, args: argparse.Namespace) -> Tuple[DataSpec, Dict]:
+def _cfg_bool(cfg: Dict, name: str, default: bool) -> bool:
+    val = cfg.get(name, default)
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(val)
+
+
+def resolve_spec_for_checkpoint(
+    checkpoint_path: str,
+    args: argparse.Namespace,
+) -> Tuple[DataSpec, Dict, Dict]:
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     cfg = dict(ckpt.get("config", {}))
 
@@ -176,7 +242,127 @@ def resolve_spec_for_checkpoint(checkpoint_path: str, args: argparse.Namespace) 
         mlp_ratio=_cfg_num(cfg, "mlp_ratio", 4.0, float),
         drop_path_rate=_cfg_num(cfg, "drop_path_rate", 0.2, float),
     )
-    return spec, ckpt
+    return spec, ckpt, cfg
+
+
+def _checkpoint_has_lora_keys(model_state: Dict) -> bool:
+    if not isinstance(model_state, dict):
+        return False
+    return any(k.startswith("base_model.") or "lora_" in k for k in model_state.keys())
+
+
+def _to_csv_list(raw) -> List[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(v).strip() for v in raw if str(v).strip()]
+    return [v.strip() for v in str(raw).split(",") if v.strip()]
+
+
+def _resolve_lora_args(cfg: Dict, args: argparse.Namespace) -> Tuple[int, float, float, List[str], str]:
+    rank = int(args.lora_rank if args.lora_rank is not None else cfg.get("lora_rank", 16))
+    alpha = float(args.lora_alpha if args.lora_alpha is not None else cfg.get("lora_alpha", 32.0))
+    dropout = float(args.lora_dropout if args.lora_dropout is not None else cfg.get("lora_dropout", 0.0))
+    target_modules = args.lora_target_modules if args.lora_target_modules else _to_csv_list(cfg.get("lora_target_modules"))
+    if not target_modules:
+        target_modules = list(DEFAULT_LORA_TARGET_MODULES)
+    bias = str(args.lora_bias if args.lora_bias is not None else cfg.get("lora_bias", "none"))
+    return rank, alpha, dropout, target_modules, bias
+
+
+def _instantiate_base_model(spec: DataSpec, channels: int, spatial_shape: Tuple[int, int]) -> FuXi:
+    model = FuXi(
+        num_variables=channels,
+        embed_dim=int(spec.embed_dim),
+        num_heads=int(spec.num_heads),
+        window_size=int(spec.window_size),
+        depth_pre=int(spec.depth_pre),
+        depth_mid=int(spec.depth_mid),
+        depth_post=int(spec.depth_post),
+        mlp_ratio=float(spec.mlp_ratio),
+        drop_path_rate=float(spec.drop_path_rate),
+        input_height=int(spatial_shape[0]),
+        input_width=int(spatial_shape[1]),
+        use_checkpoint=False,
+    )
+    return model
+
+
+def _log_load_result(prefix: str, missing: Sequence[str], unexpected: Sequence[str]) -> None:
+    if missing:
+        print(f"  [load] {prefix}: missing={len(missing)}")
+    if unexpected:
+        print(f"  [load] {prefix}: unexpected={len(unexpected)}")
+
+
+def build_inference_model(
+    spec: DataSpec,
+    ckpt: Dict,
+    cfg: Dict,
+    args: argparse.Namespace,
+    channels: int,
+    spatial_shape: Tuple[int, int],
+    device: torch.device,
+):
+    model_state = ckpt.get("model_state", ckpt)
+    checkpoint_says_lora = _cfg_bool(cfg, "enable_lora", False)
+    has_lora_keys = _checkpoint_has_lora_keys(model_state)
+    has_base_state = "base_model_state" in ckpt
+    use_lora = bool(args.enable_lora or checkpoint_says_lora or has_lora_keys or has_base_state or args.lora_base_checkpoint)
+
+    model = _instantiate_base_model(spec, channels=channels, spatial_shape=spatial_shape)
+
+    if use_lora:
+        if not PEFT_AVAILABLE:
+            raise ImportError(
+                "LoRA checkpoint path requested but PEFT is unavailable. Install peft in weather_forecast env."
+            )
+        rank, alpha, dropout, target_modules, bias = _resolve_lora_args(cfg, args)
+        if rank <= 0:
+            raise ValueError("LoRA rank must be > 0")
+
+        print(
+            "  [lora] enabled | "
+            f"rank={rank} alpha={alpha} dropout={dropout} bias={bias} targets={target_modules}"
+        )
+        lora_cfg = LoraConfig(
+            r=rank,
+            lora_alpha=alpha,
+            target_modules=target_modules,
+            lora_dropout=dropout,
+            bias=bias,
+        )
+        model = get_peft_model(model, lora_cfg)
+        base_model = model.get_base_model() if hasattr(model, "get_base_model") else model
+
+        if args.lora_base_checkpoint:
+            base_ckpt = torch.load(args.lora_base_checkpoint, map_location="cpu", weights_only=False)
+            base_state = base_ckpt.get("model_state", base_ckpt)
+            missing, unexpected = base_model.load_state_dict(base_state, strict=False)
+            _log_load_result("loaded base checkpoint", missing, unexpected)
+
+        if has_base_state:
+            missing, unexpected = base_model.load_state_dict(ckpt["base_model_state"], strict=False)
+            _log_load_result("loaded base_model_state", missing, unexpected)
+
+        if isinstance(model_state, dict):
+            if _checkpoint_has_lora_keys(model_state):
+                missing, unexpected = model.load_state_dict(model_state, strict=False)
+                _log_load_result("loaded lora model_state", missing, unexpected)
+            else:
+                missing, unexpected = base_model.load_state_dict(model_state, strict=False)
+                _log_load_result("loaded base-only model_state", missing, unexpected)
+        else:
+            raise ValueError("Unsupported checkpoint model_state format for LoRA inference")
+    else:
+        if not isinstance(model_state, dict):
+            raise ValueError("Unsupported checkpoint model_state format")
+        missing, unexpected = model.load_state_dict(model_state, strict=False)
+        _log_load_result("loaded dense model_state", missing, unexpected)
+
+    model = model.to(device)
+    model.eval()
+    return model, use_lora
 
 
 def _match_requested_times(init_times_ns: np.ndarray, requested: Sequence[str]) -> np.ndarray:
@@ -185,7 +371,6 @@ def _match_requested_times(init_times_ns: np.ndarray, requested: Sequence[str]) 
         t = token.strip()
         if not t:
             continue
-        # Date-only token (YYYY-MM-DD) selects all init times in that UTC day.
         if "T" not in t and " " not in t:
             day = np.datetime64(t, "D")
             mask |= init_times_ns.astype("datetime64[D]") == day
@@ -292,7 +477,7 @@ class SelectedRolloutDataset(Dataset):
 
 def estimate_output_gb(n_init: int, rollout_steps: int, channels: int, h: int, w: int) -> float:
     elements = n_init * rollout_steps * channels * h * w
-    total_bytes = elements * 4 * 2  # float32 forecast + float32 truth
+    total_bytes = elements * 4 * 2
     return float(total_bytes) / (1024.0 ** 3)
 
 
@@ -332,7 +517,7 @@ def run_forecast_rollout(
             pred_steps.append(pred_n)
             hist = torch.stack([hist[:, :, 1], pred_n], dim=2)
 
-        pred_n = torch.stack(pred_steps, dim=1)  # (B,S,C,H,W)
+        pred_n = torch.stack(pred_steps, dim=1)
         pred = (pred_n.float() * std_d + mean_d).cpu().numpy().astype(np.float32, copy=False)
         tgt = (future.float() * std_d + mean_d).cpu().numpy().astype(np.float32, copy=False)
 
@@ -362,6 +547,7 @@ def write_forecast_netcdf(
     longitudes: np.ndarray,
     checkpoint_path: Path,
     spec: DataSpec,
+    lora_enabled: bool,
 ) -> None:
     ds = xr.Dataset(
         data_vars={
@@ -385,6 +571,7 @@ def write_forecast_netcdf(
             "history_steps": int(spec.history_steps),
             "rollout_steps": int(lead_steps.shape[0]),
             "lead_interval_hours": 6,
+            "lora_enabled": bool(lora_enabled),
         },
     )
 
@@ -398,6 +585,17 @@ def write_forecast_netcdf(
         print(f"[warn] netcdf4 engine unavailable ({exc}); writing without explicit engine/compression")
         ds.to_netcdf(out_path)
     ds.close()
+
+
+def _robust_bounds(arr: np.ndarray, lo: float = 1.0, hi: float = 99.0) -> Tuple[float, float]:
+    vmin = float(np.nanpercentile(arr, lo))
+    vmax = float(np.nanpercentile(arr, hi))
+    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin >= vmax:
+        vmin = float(np.nanmin(arr))
+        vmax = float(np.nanmax(arr))
+        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin >= vmax:
+            return -1.0, 1.0
+    return vmin, vmax
 
 
 def plot_day1_forecast(
@@ -427,7 +625,7 @@ def plot_day1_forecast(
         selected = list(range(min(3, len(var_names))))
 
     nrows = len(selected)
-    fig, axes = plt.subplots(nrows=nrows, ncols=3, figsize=(12.5, 3.7 * nrows), squeeze=False)
+    fig, axes = plt.subplots(nrows=nrows, ncols=3, figsize=(13.5, 3.8 * nrows), squeeze=False)
 
     lon_min, lon_max = float(np.min(longitudes)), float(np.max(longitudes))
     lat_min, lat_max = float(np.min(latitudes)), float(np.max(latitudes))
@@ -437,12 +635,14 @@ def plot_day1_forecast(
         fc = forecast[0, 0, idx]
         tr = truth[0, 0, idx]
         er = fc - tr
-        err_lim = float(np.max(np.abs(er)))
+
+        f_vmin, f_vmax = _robust_bounds(np.concatenate([fc.ravel(), tr.ravel()]))
+        err_lim = float(np.nanpercentile(np.abs(er), 99.0))
         err_lim = max(err_lim, 1e-6)
 
         panels = [
-            (fc, f"Forecast day1 - {var_names[idx]}", "viridis", None, None),
-            (tr, f"Truth day1 - {var_names[idx]}", "viridis", None, None),
+            (fc, f"Forecast day1 - {var_names[idx]}", "cividis", f_vmin, f_vmax),
+            (tr, f"Truth day1 - {var_names[idx]}", "cividis", f_vmin, f_vmax),
             (er, f"Error day1 - {var_names[idx]}", "RdBu_r", -err_lim, err_lim),
         ]
 
@@ -457,18 +657,96 @@ def plot_day1_forecast(
                 vmin=vmin,
                 vmax=vmax,
             )
-            ax.set_title(title, fontsize=10)
+            ax.set_title(title)
             ax.set_xlabel("Longitude")
             ax.set_ylabel("Latitude")
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
 
     plt.tight_layout()
-    plt.savefig(out_path, dpi=180)
+    plt.savefig(out_path, dpi=220)
+    plt.close()
+
+
+def plot_t2m_rollout_panels(
+    out_path: Path,
+    forecast: np.ndarray,
+    truth: np.ndarray,
+    var_names: Sequence[str],
+    lead_steps: np.ndarray,
+    latitudes: np.ndarray,
+    longitudes: np.ndarray,
+    t2m_name: str,
+    day_list: Sequence[int],
+) -> None:
+    if forecast.shape[0] == 0 or forecast.shape[1] == 0:
+        return
+    if t2m_name not in set(var_names):
+        print(f"  [plot] t2m variable '{t2m_name}' missing; skip t2m panels")
+        return
+
+    idx = list(var_names).index(t2m_name)
+    lead_days = lead_steps.astype(np.float64) * 6.0 / 24.0
+
+    chosen_indices: List[int] = []
+    for day in day_list:
+        if day <= 0:
+            continue
+        target = float(day)
+        nearest = int(np.argmin(np.abs(lead_days - target)))
+        if nearest not in chosen_indices:
+            chosen_indices.append(nearest)
+    if not chosen_indices:
+        chosen_indices = [0]
+
+    lon_min, lon_max = float(np.min(longitudes)), float(np.max(longitudes))
+    lat_min, lat_max = float(np.min(latitudes)), float(np.max(latitudes))
+    extent = [lon_min, lon_max, lat_min, lat_max]
+
+    fc_stack = np.stack([forecast[:, si, idx].mean(axis=0) for si in chosen_indices], axis=0)
+    tr_stack = np.stack([truth[:, si, idx].mean(axis=0) for si in chosen_indices], axis=0)
+    er_stack = fc_stack - tr_stack
+
+    vmin, vmax = _robust_bounds(np.concatenate([fc_stack.ravel(), tr_stack.ravel()]), lo=2.0, hi=98.0)
+    err_lim = float(np.nanpercentile(np.abs(er_stack), 99.0))
+    err_lim = max(err_lim, 1e-6)
+
+    nrows = len(chosen_indices)
+    fig, axes = plt.subplots(nrows=nrows, ncols=3, figsize=(14.2, 3.6 * nrows), squeeze=False)
+    for r, si in enumerate(chosen_indices):
+        day_val = float(lead_days[si])
+        fc = fc_stack[r]
+        tr = tr_stack[r]
+        er = er_stack[r]
+        panels = [
+            (fc, f"t2m Forecast (day {day_val:.2f})", "coolwarm", vmin, vmax),
+            (tr, f"t2m Truth (day {day_val:.2f})", "coolwarm", vmin, vmax),
+            (er, f"t2m Error (day {day_val:.2f})", "RdBu_r", -err_lim, err_lim),
+        ]
+        for c, (arr, title, cmap, pmin, pmax) in enumerate(panels):
+            ax = axes[r, c]
+            im = ax.imshow(
+                arr,
+                origin="lower",
+                aspect="auto",
+                extent=extent,
+                cmap=cmap,
+                vmin=pmin,
+                vmax=pmax,
+            )
+            ax.set_title(title)
+            ax.set_xlabel("Longitude")
+            ax.set_ylabel("Latitude")
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=230)
     plt.close()
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    set_plot_style()
+
     checkpoints = parse_checkpoint_specs(args.checkpoints)
     device = choose_device(args.device)
 
@@ -487,7 +765,7 @@ def main() -> None:
     print("=" * 96)
 
     for ck in checkpoints:
-        checkpoint_dir, forecast_dir, _metrics_dir = build_checkpoint_dirs(Path(args.results_root), ck.name)
+        _checkpoint_dir, forecast_dir, _metrics_dir = build_checkpoint_dirs(Path(args.results_root), ck.name)
         forecast_path = forecast_dir / args.forecast_file_name
 
         if forecast_path.exists() and not args.overwrite:
@@ -496,7 +774,7 @@ def main() -> None:
 
         print(f"\n[run] checkpoint={ck.name} path={ck.path}")
 
-        spec, ckpt = resolve_spec_for_checkpoint(str(ck.path), args)
+        spec, ckpt, cfg = resolve_spec_for_checkpoint(str(ck.path), args)
         if int(spec.history_steps) != 2:
             raise ValueError("This script currently supports history_steps=2 only.")
 
@@ -562,13 +840,15 @@ def main() -> None:
             persistent_workers=(args.num_workers > 0),
         )
 
-        checkpoint_state = ckpt.get("model_state", ckpt)
-        model = build_model(
+        model, lora_enabled = build_inference_model(
             spec=spec,
+            ckpt=ckpt,
+            cfg=cfg,
+            args=args,
             channels=accessor.channels,
             spatial_shape=accessor.spatial_shape,
-            checkpoint_state=checkpoint_state,
-        ).to(device)
+            device=device,
+        )
 
         forecast, truth, init_times = run_forecast_rollout(
             model=model,
@@ -582,7 +862,6 @@ def main() -> None:
             spatial_shape=accessor.spatial_shape,
         )
 
-        # Preserve selection order from input filters.
         if selected_init_times.shape[0] == init_times.shape[0]:
             init_times = selected_init_times
 
@@ -598,17 +877,32 @@ def main() -> None:
             longitudes=accessor.longitudes,
             checkpoint_path=ck.path,
             spec=spec,
+            lora_enabled=lora_enabled,
         )
 
-        plot_day1_forecast(
-            out_path=forecast_dir / "day1_forecast.png",
-            forecast=forecast,
-            truth=truth,
-            var_names=accessor.var_names,
-            latitudes=accessor.latitudes,
-            longitudes=accessor.longitudes,
-            requested_vars=args.day1_plot_vars,
-        )
+        if not args.skip_day1_plot:
+            plot_day1_forecast(
+                out_path=forecast_dir / "day1_forecast.png",
+                forecast=forecast,
+                truth=truth,
+                var_names=accessor.var_names,
+                latitudes=accessor.latitudes,
+                longitudes=accessor.longitudes,
+                requested_vars=args.day1_plot_vars,
+            )
+
+        if not args.skip_t2m_plot:
+            plot_t2m_rollout_panels(
+                out_path=forecast_dir / "t2m_rollout_panels.png",
+                forecast=forecast,
+                truth=truth,
+                var_names=accessor.var_names,
+                lead_steps=lead_steps,
+                latitudes=accessor.latitudes,
+                longitudes=accessor.longitudes,
+                t2m_name=args.t2m_var_name,
+                day_list=args.t2m_plot_days,
+            )
 
         metadata = {
             "checkpoint_name": ck.name,
@@ -626,6 +920,7 @@ def main() -> None:
             "lead_hours": (lead_steps * 6).tolist(),
             "channels": accessor.var_names,
             "spatial_shape": [int(accessor.spatial_shape[0]), int(accessor.spatial_shape[1])],
+            "lora_enabled": bool(lora_enabled),
         }
         with (forecast_dir / "forecast_metadata.json").open("w") as f:
             json.dump(metadata, f, indent=2)
