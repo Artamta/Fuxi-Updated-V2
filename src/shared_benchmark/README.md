@@ -51,7 +51,7 @@ For each channel and lead time, the evaluation uses latitude weights and average
 Latitude weight:
 
 $$
-a_i = \frac{\cos(\phi_i)}{\operatorname{mean}_i[\cos(\phi_i)]}
+a_i = \frac{\cos(\phi_i)}{\mathrm{mean}_i[\cos(\phi_i)]}
 $$
 
 Weighted RMSE:
@@ -81,17 +81,56 @@ where $M$ is climatology selected by valid time (day-of-year, hour).
 Optional L1 (if enabled):
 
 $$
-\mathrm{L1}(\tau)=\operatorname{mean}_{\text{init,channel,lat,lon}}\left|\hat{X}-X\right|
+\mathrm{L1}(\tau)=\mathrm{mean}_{\text{init,channel,lat,lon}}\left|\hat{X}-X\right|
 $$
 
 ## How model comparison is ranked
 
-The script writes `comparison/model_summary.csv` and sorts by:
+The script writes `comparison/model_summary.csv` and sorts models by:
 
-1. lower `mean_rmse` is better
-2. if tied, higher `mean_acc` is better
+1. lower `mean_rmse` (latitude-weighted) is better
+2. if two models have very similar RMSE, higher `mean_acc` is better
 
-It also writes horizon-window results in `comparison/horizon_comparison.csv` using your `horizon_days` config.
+It also writes `comparison/horizon_comparison.csv` using your `horizon_days` windows (for example 5-day, 10-day, 15-day).
+
+## Example plots
+
+These example images are generated from real benchmark runs in this repo:
+
+- [Comparison figure](../../docs/shared_benchmark_examples/model_comparison.png)
+- [RMSE per-variable panels (all 20 variables)](../../docs/shared_benchmark_examples/poster_all20_rmse_per_variable_emb768.png)
+- [ACC per-variable panels (all 20 variables)](../../docs/shared_benchmark_examples/poster_all20_acc_per_variable_emb768.png)
+
+Note:
+
+- `poster_all20_rmse_overlay_emb768.png` is no longer produced.
+- The overlay version was removed because it was hard to read for poster use.
+
+## Expected results after running benchmark
+
+After one benchmark run, you should expect these files.
+
+Inside `results_root/checkpoint_<model_name>/metrics/` (per model):
+
+- `summary.json`
+- `metrics_per_lead.csv`
+- `mean_metrics_per_lead.csv`
+- `horizon_window_summary.csv`
+- `poster_all20_rmse_per_variable.png`
+- `poster_all20_acc_per_variable.png`
+- optional `l1_per_lead.csv` when L1 is enabled
+
+Inside `results_root/comparison/` (shared across all models):
+
+- `model_comparison.png`
+- `model_summary.csv`
+- `horizon_comparison.csv`
+
+Inside `docs/shared_benchmark_examples/` (repo examples for GitHub README):
+
+- `model_comparison.png`
+- `poster_all20_rmse_per_variable_emb768.png`
+- `poster_all20_acc_per_variable_emb768.png`
 
 ## Step-by-step usage
 

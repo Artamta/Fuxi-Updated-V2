@@ -975,6 +975,49 @@ def plot_all_variable_rmse_panels(
     plt.close(fig)
 
 
+def plot_all_variable_acc_panels(
+    out_path: Path,
+    lead_days: np.ndarray,
+    acc_values: np.ndarray,
+    var_names: Sequence[str],
+    title: str,
+    ylabel: str = "ACC",
+) -> None:
+    if acc_values.shape[1] != len(var_names):
+        return
+
+    n_vars = len(var_names)
+    ncols = _choose_grid_cols(n_vars, max_cols=5)
+    nrows = int(np.ceil(n_vars / ncols))
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 2.9 * nrows), squeeze=False)
+    axes_flat = axes.ravel()
+
+    for ax in axes_flat[n_vars:]:
+        ax.axis("off")
+
+    for idx, name in enumerate(var_names):
+        ax = axes_flat[idx]
+        y = acc_values[:, idx]
+        ax.plot(lead_days, y, color="#1f77b4", linewidth=1.9)
+        ax.set_title(name, fontsize=9)
+        ax.set_xlabel("Lead time (days)")
+        ax.set_ylabel(ylabel)
+        ax.axhline(0.0, color="black", linewidth=0.8, alpha=0.55)
+
+        ymin = float(np.nanmin(y))
+        ymax = float(np.nanmax(y))
+        if np.isfinite(ymin) and np.isfinite(ymax):
+            low = min(-0.1, ymin - 0.05)
+            high = max(1.0, ymax + 0.05)
+            ax.set_ylim(low, min(high, 1.02))
+
+    fig.suptitle(title, fontsize=14)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.98])
+    fig.savefig(out_path, dpi=250)
+    plt.close(fig)
+
+
 def select_plot_indices(var_names: Sequence[str], requested: Optional[Sequence[str]]) -> List[int]:
     if requested is not None and len(requested) > 0:
         req = set(requested)
@@ -1246,15 +1289,6 @@ def main() -> None:
             horizon_days=args.horizon_days,
             rmse_label="Latitude-weighted RMSE",
         )
-        plot_all_variable_rmse_overlay(
-            out_path=metrics_dir / "poster_all20_rmse_overlay.png",
-            lead_days=lead_days,
-            rmse_values=rmse_unweighted,
-            var_names=channel_names,
-            horizon_days=args.horizon_days,
-            title="RMSE (all 20 variables)",
-            ylabel="RMSE",
-        )
         plot_all_variable_rmse_panels(
             out_path=metrics_dir / "poster_all20_rmse_per_variable.png",
             lead_days=lead_days,
@@ -1262,6 +1296,14 @@ def main() -> None:
             var_names=channel_names,
             title="RMSE (unweighted): all 20 variable panels",
             ylabel="RMSE",
+        )
+        plot_all_variable_acc_panels(
+            out_path=metrics_dir / "poster_all20_acc_per_variable.png",
+            lead_days=lead_days,
+            acc_values=acc,
+            var_names=channel_names,
+            title="ACC: all 20 variable panels",
+            ylabel="ACC",
         )
 
         surface_idx, pressure_idx = _split_variable_groups(channel_names)
