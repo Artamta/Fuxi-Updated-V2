@@ -1,29 +1,21 @@
 # Shared benchmark (forecast-only)
 
-This folder is a simple, shared evaluation pipeline for weather-model teams.
+This folder gives you one consistent path to compute RMSE and ACC from forecast files.
 
-The workflow is forecast-only:
+You can use forecasts from any weather model. The model itself is not run here.
+You only provide forecast NetCDF files, then this benchmark computes metrics and comparison outputs.
 
-- each team runs its own model however it wants
-- each team exports one forecast NetCDF file
-- this benchmark script evaluates all files with the same metric code
+## What you can do with this
 
-No model training or checkpoint loading is done in this folder.
-
-## Who this is for
-
-Anyone who wants to compare model quality on the same data split:
-
-- FuXi users
-- Pangu users
-- GraphCast users
-- any custom weather model users
-
-As long as the exported forecast file format matches the schema below, the model type does not matter.
+- compute latitude-weighted RMSE
+- compute unweighted RMSE
+- compute ACC (anomaly correlation)
+- optionally compute L1
+- compare multiple models with the same evaluation settings
 
 ## Required forecast file format
 
-Each model must provide one NetCDF with:
+Each forecast NetCDF must include:
 
 - data variable `forecast`
 - data variable `truth`
@@ -46,7 +38,16 @@ Expected shape:
 
 ## Metric formulas used in this benchmark
 
-For each channel and lead time, the evaluation uses latitude weights and averages over initialization times.
+Metrics are computed for each channel $c$ and lead time $\tau$, then averaged over all initialization times in set $D$.
+
+Notation:
+
+- $\hat{X}$: model forecast
+- $X$: target truth
+- $M$: climatology at valid time
+- $i,j$: latitude and longitude indices
+- $H,W$: number of latitude and longitude points
+- $\phi_i$: latitude at index $i$
 
 Latitude weight:
 
@@ -57,45 +58,45 @@ $$
 Weighted RMSE:
 
 $$
-\mathrm{RMSE}(c,\tau) = \frac{1}{|D|} \sum_{t_0 \in D}
-\sqrt{\frac{1}{HW} \sum_{i,j} a_i\,\left(\hat{X}_{c,\tau,t_0}(i,j)-X_{c,\tau,t_0}(i,j)\right)^2}
+\mathrm{RMSE}(c,\tau)=\frac{1}{|D|}\sum_{t_0\in D}
+\sqrt{\frac{1}{HW}\sum_{i,j}a_i\left(\hat{X}_{c,\tau,t_0}(i,j)-X_{c,\tau,t_0}(i,j)\right)^2}
 $$
 
 Unweighted RMSE (also exported):
 
 $$
-\mathrm{RMSE}_{\text{unweighted}}(c,\tau) = \frac{1}{|D|} \sum_{t_0 \in D}
-\sqrt{\frac{1}{HW} \sum_{i,j}\left(\hat{X}_{c,\tau,t_0}(i,j)-X_{c,\tau,t_0}(i,j)\right)^2}
+\mathrm{RMSE}_{\mathrm{unweighted}}(c,\tau)=\frac{1}{|D|}\sum_{t_0\in D}
+\sqrt{\frac{1}{HW}\sum_{i,j}\left(\hat{X}_{c,\tau,t_0}(i,j)-X_{c,\tau,t_0}(i,j)\right)^2}
 $$
 
 ACC (anomaly correlation):
 
 $$
-\mathrm{ACC}(c,\tau) = \frac{1}{|D|}\sum_{t_0 \in D}
-\frac{\sum_{i,j} a_i\,(\hat{X}-M)(X-M)}
-{\sqrt{\left(\sum_{i,j} a_i\,(\hat{X}-M)^2\right)\left(\sum_{i,j} a_i\,(X-M)^2\right)}}
+\mathrm{ACC}(c,\tau)=\frac{1}{|D|}\sum_{t_0\in D}
+\frac{\sum_{i,j}a_i\,(\hat{X}-M)(X-M)}
+{\sqrt{\left(\sum_{i,j}a_i\,(\hat{X}-M)^2\right)\left(\sum_{i,j}a_i\,(X-M)^2\right)}}
 $$
 
-where $M$ is climatology selected by valid time (day-of-year, hour).
+Climatology $M$ is selected by valid time (day-of-year and hour).
 
 Optional L1 (if enabled):
 
 $$
-\mathrm{L1}(\tau)=\mathrm{mean}_{\text{init,channel,lat,lon}}\left|\hat{X}-X\right|
+\mathrm{L1}(\tau)=\mathrm{mean}_{\mathrm{init,channel,lat,lon}}\left|\hat{X}-X\right|
 $$
 
-## How model comparison is ranked
+## How ranking works
 
-The script writes `comparison/model_summary.csv` and sorts models by:
+The benchmark writes `comparison/model_summary.csv` and sorts by:
 
-1. lower `mean_rmse` (latitude-weighted) is better
-2. if two models have very similar RMSE, higher `mean_acc` is better
+1. lower `mean_rmse` first
+2. if RMSE is tied, higher `mean_acc`
 
-It also writes `comparison/horizon_comparison.csv` using your `horizon_days` windows (for example 5-day, 10-day, 15-day).
+You also get horizon-wise comparison in `comparison/horizon_comparison.csv` using your configured `horizon_days`.
 
 ## Example plots
 
-These example images are generated from real benchmark runs in this repo:
+These are real outputs from this repo:
 
 ### Comparison figure
 
@@ -110,11 +111,10 @@ These example images are generated from real benchmark runs in this repo:
 ![ACC per-variable panels (all 20 variables)](../../docs/shared_benchmark_examples/poster_all20_acc_per_variable_emb768.png)
 
 
-## Expected results after running benchmark
 
-After one benchmark run, you should expect these files.
+## Expected results after one run
 
-Inside `results_root/checkpoint_<model_name>/metrics/` (per model):
+Inside `results_root/checkpoint_<model_name>/metrics/`:
 
 - `summary.json`
 - `metrics_per_lead.csv`
@@ -122,15 +122,15 @@ Inside `results_root/checkpoint_<model_name>/metrics/` (per model):
 - `horizon_window_summary.csv`
 - `poster_all20_rmse_per_variable.png`
 - `poster_all20_acc_per_variable.png`
-- optional `l1_per_lead.csv` when L1 is enabled
+- optional `l1_per_lead.csv` (when L1 is enabled)
 
-Inside `results_root/comparison/` (shared across all models):
+Inside `results_root/comparison/`:
 
 - `model_comparison.png`
 - `model_summary.csv`
 - `horizon_comparison.csv`
 
-Inside `docs/shared_benchmark_examples/` (repo examples for GitHub README):
+Inside `docs/shared_benchmark_examples/`:
 
 - `model_comparison.png`
 - `poster_all20_rmse_per_variable_emb768.png`
@@ -138,12 +138,12 @@ Inside `docs/shared_benchmark_examples/` (repo examples for GitHub README):
 
 ## Step-by-step usage
 
-1. Ask each team to export forecast files in the required schema.
+1. Export forecast files from your model in the required schema.
 2. Copy and edit [src/shared_benchmark/example_config.json](src/shared_benchmark/example_config.json).
-3. Add one entry per model under `models`:
+3. Add one model entry per forecast file with:
    - `name`
    - `forecast_file`
-4. Run benchmark:
+4. Run:
 
 ```bash
 python -m src.shared_benchmark.run_benchmark --config src/shared_benchmark/example_config.json
@@ -157,64 +157,51 @@ python -m src.shared_benchmark.run_benchmark \
   --compute-l1
 ```
 
-Use `--no-compute-l1` to force-disable L1 from CLI.
+Use `--no-compute-l1` to force-disable L1.
 
 ## Config keys
 
 - `results_root`: output folder
-- `horizon_days`: horizon windows, for example `[5, 10, 15]`
+- `horizon_days`: example `[5, 10, 15]`
 - `compute_l1`: true/false
 - `strict_consistency`: true/false
 - `eval_no_heatmaps`: true/false
 - `overwrite_eval`: true/false
-- `climatology_store`: optional ACC climatology path override
+- `climatology_store`: optional override path
 - `models`: list of model entries
 
 Each model entry:
 
-- `name`: model label in plots/tables
-- `forecast_file`: path to the model forecast NetCDF
-
-## What gets generated
-
-Per model (inside `results_root/checkpoint_<name>/metrics/`):
-
-- RMSE/ACC CSVs and plots
-- optional `l1_per_lead.csv` if L1 is enabled
-
-Shared outputs (inside `results_root/comparison/`):
-
-- `model_comparison.png`
-- `model_summary.csv`
-- `horizon_comparison.csv`
+- `name`: label shown in plots and tables
+- `forecast_file`: path to forecast NetCDF
 
 ## Common errors
 
 `Forecast file not found`
 
-- check path in config
-- relative paths are resolved from repo root
+- check file path in config
+- relative paths resolve from repo root
 
 `Consistency check failed`
 
-- channel list/order, lead steps, or grid shape differ across models
-- fix exported files or set `strict_consistency: false` only when mismatch is intentional
+- channel order, lead steps, or grid shape do not match across models
+- fix forecast exports or set `strict_consistency: false` intentionally
 
 `Missing variable/coordinate`
 
-- required fields are missing in NetCDF
+- required fields are missing in the NetCDF
 
 `Dimension order error`
 
-- make sure both `forecast` and `truth` are exactly `(init_time, lead_step, channel, lat, lon)`
+- both `forecast` and `truth` must be `(init_time, lead_step, channel, lat, lon)`
 
-## Minimal exporter checklist for each team
+## Quick export checklist
 
-Before sharing a forecast file, each team should check:
+Before evaluation, make sure your file has:
 
-1. predictions stored in `forecast`
-2. targets stored in `truth`
-3. channel names in `channel_name`
-4. lead indices in `lead_step`
-5. coordinates in `lat`, `lon`
-6. correct dim order for both arrays
+1. `forecast`
+2. `truth`
+3. `channel_name`
+4. `lead_step`
+5. `lat`, `lon`
+6. correct 5D dimension order
