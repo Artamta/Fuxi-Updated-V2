@@ -117,6 +117,33 @@ scancel 7707
 sbatch scripts/slurm_prio_ar768_poster.sh
 ```
 
+## One-command poster pipeline
+
+If you want to submit training, dependent rollout comparison, and packaging in one shot:
+
+```bash
+bash scripts/submit_ar768_poster_pipeline.sh
+```
+
+For the recommended full-finetune poster run, use the definitive launcher:
+
+```bash
+bash scripts/submit_ar768_definitive.sh
+```
+
+Useful overrides:
+
+```bash
+AR_BATCH_SIZE=8 AR_NUM_WORKERS=16 NO_HEATMAPS=1 bash scripts/submit_ar768_poster_pipeline.sh
+```
+
+To run LoRA instead of full fine-tuning:
+
+```bash
+AR_ENABLE_LORA=1 AR_LORA_RANK=16 AR_LORA_ALPHA=32 AR_LORA_DROPOUT=0.05 \
+  bash scripts/submit_ar768_poster_pipeline.sh
+```
+
 ## Poster comparison evaluation (shareable)
 
 Use one command:

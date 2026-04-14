@@ -1,0 +1,67 @@
+data:
+  zarr_store: /home/bedartha/public/datasets/as_downloaded/weatherbench2/era5/1959-2023_01_10-6h-240x121_equiangular_with_poles_conservative.zarr
+  train_start: 1979-01-01
+  train_end: 2018-12-31
+  val_start: 2019-01-01
+  val_end: 2019-12-31
+  test_start: 2021-01-01
+  test_end: 2022-12-31
+  history_steps: 2
+  pressure_vars: [temperature, geopotential, specific_humidity, u_component_of_wind, v_component_of_wind]
+  surface_vars: [2m_temperature, 10m_u_component_of_wind, 10m_v_component_of_wind, surface_pressure, total_column_water_vapour]
+  pressure_levels: [850, 500, 250]
+
+model:
+  preset: paper
+  embed_dim: 768
+  window_size: 8
+  num_heads: 8
+  depth_pre: 2
+  depth_mid: 44
+  depth_post: 2
+  mlp_ratio: 4.0
+  drop_path_rate: 0.2
+  use_checkpoint: false
+
+finetuning:
+  enable_lora: true
+  lora_rank: 32
+  lora_alpha: 64
+  lora_dropout: 0.05
+  lora_target_modules: [qkv, proj, fc1, fc2]
+  lora_bias: none
+  lora_train_base: false
+
+train:
+  forecast_steps: 20
+  target_offset_steps: 0
+  teacher_forcing: 0.0
+  curriculum_start_steps: 2
+  curriculum_max_steps: 20
+  curriculum_step_size: 4
+  curriculum_epoch_interval: 1
+  input_noise_std: 0.0
+  noise_coarse_factor: 16
+  max_epochs: 30
+  max_iters: 40000
+  batch_size: 8
+  num_workers: 8
+  prefetch_factor: 4
+  lr: 0.0002
+  constant_lr: false
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+  eval_every: 1
+  patience: 6
+  fp16: false
+  status_every_steps: 100
+
+output:
+  output_root: results/poster_runs
+  exp_name: stage_short_lora_5day
+  seed: 42
+
+logging:
+  tensorboard: true

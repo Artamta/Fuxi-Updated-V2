@@ -608,7 +608,15 @@ def build_model(num_vars: int, spatial_h: int, spatial_w: int, args, device: tor
 
     num_gpus = args.gpus or torch.cuda.device_count()
     if num_gpus > 1 and torch.cuda.device_count() > 1:
-        model = torch.nn.DataParallel(model, device_ids=list(range(num_gpus)))
+        device_ids = list(range(num_gpus))
+        model = torch.nn.DataParallel(model, device_ids=device_ids)
+        print(
+            "Multi-GPU enabled: DataParallel "
+            f"device_ids={device_ids}. Primary replica on cuda:{device_ids[0]} "
+            "will typically hold more memory than secondary GPUs."
+        )
+    else:
+        print(f"Single-GPU mode: using device={device}")
     raw_model = model.module if hasattr(model, "module") else model
     total_params = sum(p.numel() for p in raw_model.parameters())
     trainable_params = sum(p.numel() for p in raw_model.parameters() if p.requires_grad)
