@@ -3,7 +3,7 @@
 % Author: Ayush Raj, Roll No: 20221068
 % Supervisor: Dr. Bedartha Goswami
 % Department of Data Science, IISER Pune
-% Date: November 20, 2025
+% Date: April 20, 2026
 % ---------------------------------------------------------
 
 \documentclass[12pt]{report}
@@ -40,8 +40,7 @@
 \begin{titlepage}
 \centering
 
-\vspace*{0.4cm}
-\includegraphics[width=0.27\textwidth]{logo.png}\\[1cm]
+\vspace*{1.2cm}
 
 {\Large Indian Institute of Science Education and Research (IISER) Pune}\\[4pt]
 {\large Department of Data Science}\\[1.2cm]
@@ -62,7 +61,7 @@ Global Weather Forecasting}\\[1.2cm]
 
 \vfill
 {\footnotesize Project Repository: \url{https://github.com/Artamta/Fuxi-Weather-Prediction}}\\[0.2cm]
-{\large November 2025}
+{\large April 2026}
 
 \end{titlepage}
 
@@ -71,9 +70,9 @@ Global Weather Forecasting}\\[1.2cm]
 % ABSTRACT
 % ---------------------------------------------------------
 \begin{abstract}
-We present a FuXi-inspired deep learning pipeline for single-step (6-hour) global weather forecasting on a coarse ($64\times32$) ERA5 grid. The model ingests two consecutive timesteps and predicts the next state for 20 channels (five surface and fifteen upper-air features). The architecture combines a 3D cube embedding, a reduced-depth Swin Transformer V2 encoder for hierarchical global context, and a U-Net-style decoder for spatial reconstruction. A $1\times1$ projection and bilinear interpolation produce the final forecast fields.
+We present a FuXi-inspired deep learning pipeline for single-step (6-hour) global weather forecasting on a $1.5^\circ$ ERA5 grid ($240\times121$), after initial smoke experiments on a coarser $64\times32$ setup. The model ingests two consecutive timesteps and predicts the next state for 20 channels (five surface and fifteen upper-air features). The architecture combines a 3D cube embedding, a reduced-depth Swin Transformer V2 encoder for hierarchical global context, and a U-Net-style decoder for spatial reconstruction. In the current implementation, decoder upsampling uses learned transposed convolutions, while a final $1\times1$ projection plus bilinear resize is retained for exact output-grid alignment.
 
-Training was stable, but the limited spatial resolution caused oversmoothing and collapse toward climatological means. I present evaluation metrics (RMSE, ACC, latitude-weighted L1), qualitative comparison plots, and per-variable error analyses. Future extensions include higher-resolution experiments, deeper Swin stacks, autoregressive FuXi-style cascades, and ensemble uncertainty estimation.
+Training was stable overall, but skill remained sensitive to architecture depth, horizon length, and fine-tuning strategy. I present evaluation metrics (RMSE, ACC, latitude-weighted L1), qualitative comparison plots, and per-variable error analyses. I also tested full fine-tuning and PEFT/LoRA variants under multiple configurations; in the present runs, LoRA variants underperformed the strongest non-LoRA checkpoint on long-horizon metrics. Future extensions include deeper architecture sweeps at higher resolution, better PEFT targeting, stronger long-horizon regularization, and ensemble uncertainty estimation.
 \end{abstract}
 
 % ---------------------------------------------------------
@@ -83,7 +82,7 @@ Machine learning has advanced rapidly in global weather forecasting. Models such
 
 FuXi introduced a practical strategy for extending ML forecasts to longer lead times: instead of training a single model to forecast 15 days directly, FuXi trains a \emph{cascade} of specialized models that are chained autoregressively (0--5 d, 5--10 d, 10--15 d). Each model is optimized for its target window, which reduces accumulation of long-range errors and allows the use of model-specific regularization and perturbations (e.g., Perlin-noise-like initial perturbations in FuXi-style ensembles) to better capture forecast uncertainty. This cascaded approach mitigates the compounding of small biases that typically destroys forecast skill in a single monolithic model over long horizons.
 
-This semester project focuses on implementing the \emph{core} FuXi-like module (cube embedding $\rightarrow$ Swin encoder $\rightarrow$ U-Net decoder) and understanding the practical trade-offs of architecture depth, resolution, and training strategy at a coarse $64\times32$ resolution using the WeatherBench2 ERA5 dataset. The aim was to build a robust training pipeline, diagnose failure modes, and chart a path to a full autoregressive/cascade system in future work.
+This semester project focuses on implementing the \emph{core} FuXi-like module (cube embedding $\rightarrow$ Swin encoder $\rightarrow$ U-Net decoder) and understanding practical trade-offs of architecture depth, resolution, and training strategy on WeatherBench2 ERA5. The production experiments in this report use a $1.5^\circ$ global grid ($240\times121$), with early smoke/debug experiments at $64\times32$. The aim was to build a robust training pipeline, diagnose failure modes, and chart a path to a full autoregressive/cascade system in future work.
 
 % ---------------------------------------------------------
 \chapter{Model Architecture and Data Flow}
@@ -95,13 +94,20 @@ This semester project focuses on implementing the \emph{core} FuXi-like module (
     \label{fig:fuxi_architecture}
 \end{figure}
 
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{basic_arch.png}
+  \caption{Simplified FuXi architecture overview used as a high-level reference before detailed block-level discussion.}
+  \label{fig:fuxi_basic_architecture}
+\end{figure}
+
 A concise description of the data flow:
 \begin{enumerate}
-  \item \textbf{Input:} Two consecutive timesteps → tensor of shape $(B, C=20, T=2, H=32, W=64)$.
+  \item \textbf{Input:} Two consecutive timesteps $\rightarrow$ tensor of shape $(B, C=20, T=2, H=121, W=240)$.
   \item \textbf{Cube Embedding:} 3D convolutional blocks map local spatiotemporal cubes to latent tokens.
   \item \textbf{Swin Transformer V2 Encoder:} Multi-level, shifted-window self-attention extracts global context.
-  \item \textbf{U-Net Decoder:} Hierarchical upsampling recovers spatial detail with skip connections.
-  \item \textbf{Projection \& Interpolation:} $1\times1$ convolution + bilinear interpolation outputs 20-channel forecasts.
+  \item \textbf{U-Net Decoder:} Hierarchical upsampling recovers spatial detail with skip connections and learned \texttt{ConvTranspose2d} upsampling blocks.
+  \item \textbf{Projection \& Alignment:} A $1\times1$ convolution projects to 20 variables, and a final bilinear resize aligns the output exactly to $(121, 240)$.
 \end{enumerate}
 
 \section{Why Swin + U-Net}
@@ -128,22 +134,188 @@ A concise description of the data flow:
   \label{fig:arch_blocks}
 \end{figure}
 
-\FloatBarrier
+\section{Implementation-Level Tensor Flow (Current AR768 Setup)}
 
-% ---------------------------------------------------------
-\chapter{Training Setup and Foundation Model Details}
+The current production architecture in this repository uses the AR768 configuration on a $240\times121$ grid with patch size $(2,4,4)$ and Swin window size 8. The exact shape evolution is:
 
-We trained a foundation FuXi-like model as the starting point for this project. Key experimental settings (used to produce the foundation checkpoints referenced in this report) are listed below.
+\[
+(B,20,2,121,240)
+\xrightarrow{\text{CubeEmbedding Conv3D }k=s=(2,4,4)}
+(B,768,30,60)
+\xrightarrow{\text{pad to }(32,64)}
+(B,768,32,64)
+\]
 
-\section{Foundation Model Hyperparameters and Environment}
-
-The foundation model was trained on NVIDIA A100 GPUs with mixed-precision (AMP). 
-A small batch size was required because of the high parameter count of the Swin Transformer stacks, which quickly led to out-of-memory (OOM) conditions at the $64\times32$ resolution. 
-The table below summarizes the key hyperparameters used in the first-stage FuXi-like foundation model.
+\[
+\xrightarrow{\text{U-Transformer pre/down/mid/up/post}}
+(B,768,32,64)
+\xrightarrow{\text{crop}}
+(B,768,30,60)
+\xrightarrow{\text{FC + reshape}}
+(B,20,120,240)
+\xrightarrow{\text{bilinear align}}
+(B,20,121,240)
+\]
 
 \begin{table}[H]
 \centering
-\caption{Summary of foundation model training configuration.}
+\caption{Layer-wise tensor dimensions for the current AR768 forward path ($H\times W=121\times240$).}
+\begin{tabular}{lll}
+\hline
+\textbf{Stage} & \textbf{Operation} & \textbf{Output shape} \\
+\hline
+Input & two-step history tensor & $(B,20,2,121,240)$ \\
+Cube embedding & Conv3D $(k=s=(2,4,4))$ & $(B,768,30,60)$ \\
+Padding & divisibility by $2\times$window ($=16$) & $(B,768,32,64)$ \\
+Pre Swin stage & depth 2 at full resolution & $(B,768,32,64)$ \\
+Down block & Conv2D $(k=3,s=2,p=1)$ + residual & $(B,768,16,32)$ \\
+Mid Swin stage & depth 44 at half resolution & $(B,768,16,32)$ \\
+Up block & skip concat + ConvTranspose2D $(k=2,s=2)$ & $(B,768,32,64)$ \\
+Post Swin stage & depth 2 at full resolution & $(B,768,32,64)$ \\
+Crop & remove padding & $(B,768,30,60)$ \\
+Head & linear projection + reshape & $(B,20,120,240)$ \\
+Alignment & bilinear resize & $(B,20,121,240)$ \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Convolutional operators used in the implemented FuXi blocks.}
+\begin{tabular}{llll}
+\hline
+\textbf{Module} & \textbf{Kernel} & \textbf{Stride} & \textbf{Role} \\
+\hline
+CubeEmbedding Conv3D & $(2,4,4)$ & $(2,4,4)$ & space-time tokenization \\
+DownBlock Conv2D & $3\times3$ & $2$ & spatial downsampling \\
+Residual Conv2D (inside blocks) & $3\times3$ & $1$ & local feature refinement \\
+UpBlock ConvTranspose2D & $2\times2$ & $2$ & learned upsampling \\
+Skip fusion Conv2D & $1\times1$ & $1$ & channel fusion after concat \\
+Final projection (FC) & token-wise linear & -- & map 768 to $20\times4\times4$ \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{How this differs from vanilla Swin and vanilla U-Net.}
+The Swin backbone here is not a hierarchical patch-merging classifier-style Swin. Instead, it uses fixed-resolution \emph{SwinStage} stacks with shifted-window blocks and SwinV2 mechanisms (scaled cosine attention + continuous relative position bias), then inserts a single U-shaped down/up bridge around the middle stack. Relative to a standard U-Net, this design keeps channel width constant and uses Swin attention blocks as the main representational engine, while convolutional residual/down/up blocks provide local inductive bias and stable spatial reconstruction.
+
+\paragraph{Why this connection works in practice.}
+Most attention depth is allocated at half resolution (44 blocks in the current AR768 setting), which lowers cost while preserving long-range context. The convolutional down/up path and skip connection re-inject local structure, and the final projection+alignment step guarantees output-grid consistency for evaluation.
+
+\FloatBarrier
+
+% ---------------------------------------------------------
+\chapter{Training Setup and Configuration Audit}
+
+We trained a foundation FuXi-like model as the starting point for this project. Key experimental settings (used to produce the foundation checkpoints referenced in this report) are listed below.
+
+\section{Current AR768 Cascade Settings (Used In Main Experiments)}
+
+The report's primary autoregressive experiments use the AR768 cascade configs (short/medium/long) at $1.5^\circ$ resolution. These are the active settings in the current codebase.
+
+\begin{table}[H]
+\centering
+\caption{Shared AR768 cascade hyperparameters from current config files.}
+\begin{tabular}{ll}
+\hline
+\textbf{Setting} & \textbf{Value / Description} \\
+\hline
+Grid / dataset & ERA5, $240\times121$ (1.5$^\circ$), 6-hour cadence \\
+Input channels & 20 variables (5 surface + 15 upper-air) \\
+History steps & 2 \\
+Embed dimension & 768 \\
+Swin window / heads & 8 / 8 \\
+Depth split (pre, mid, post) & (2, 44, 2) \\
+Drop path rate & 0.2 \\
+Forecast steps per stage & 20 \\
+Batch size & 4 \\
+Max epochs / max iters & 30 / 12000 \\
+Learning rate / schedule & $1.0\times10^{-7}$ / constant \\
+Weight decay & 0.1 \\
+Betas & (0.9, 0.95) \\
+FP16 & enabled \\
+LoRA default in cascade configs & disabled (rank 16, alpha 32 declared but unused) \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Stage-specific AR768 cascade settings (current configs).}
+\begin{tabular}{lccc}
+\hline
+\textbf{Stage} & \textbf{Target offset steps} & \textbf{Forecast window} & \textbf{Seed} \\
+\hline
+Short & 0 & 0--5 days & 42 \\
+Medium & 20 & 5--10 days & 43 \\
+Long & 40 & 10--15 days & 44 \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Current AR768 LoRA short-stage config used for PEFT runs.}
+\begin{tabular}{ll}
+\hline
+\textbf{Setting} & \textbf{Value / Description} \\
+\hline
+Base architecture & AR768 (window 8, heads 8, depths 2/44/2) \\
+LoRA enabled & true \\
+LoRA rank / alpha / dropout & 32 / 64 / 0.05 \\
+LoRA target modules & qkv, proj, fc1, fc2 \\
+Train base with adapters & false (adapter-only) \\
+Batch size & 8 \\
+Max epochs / max iters & 30 / 40000 \\
+Learning rate / schedule & $2.0\times10^{-4}$ / non-constant \\
+Weight decay & 0.1 \\
+FP16 & disabled \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Checkpoint Provenance: emb\_768 and emb\_1536}
+
+For clarity, this project currently contains multiple pretrained checkpoint directories. The two paths highlighted by the user are both valid pretrained artifacts:
+
+\begin{itemize}
+  \item \texttt{/home/raj.ayush/fuxi-final/fuxi\_new/Models\_paper/pretrain/emb\_768}
+  \item \texttt{/home/raj.ayush/fuxi-final/fuxi\_new/Models\_paper/pretrain/emb\_1536}
+\end{itemize}
+
+However, the evaluation outputs used in this report (e.g., \texttt{results\_new/checkpoint\_emb768/*}) were generated from the archived emb\_768 checkpoint path recorded in forecast metadata:
+
+\begin{itemize}
+  \item \texttt{/home/raj.ayush/fuxi-final/fuxi\_new/results/checkpoints\_archive/fuxi\_paper\_prev/Models\_paper/pretrain/emb\_768/best.pt}
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Status of the two requested pretrained model directories in the current report pipeline.}
+\begin{tabular}{p{0.36\textwidth}p{0.22\textwidth}p{0.33\textwidth}}
+\hline
+\textbf{Model directory} & \textbf{Current status} & \textbf{How it is used in this report} \\
+\hline
+\texttt{Models\_paper/pretrain/emb\_768} & Available (best.pt, last.pt, config/metrics) & Referenced as a pretrained artifact; current reported rollout metrics are from the archived emb\_768 path above. \\
+\texttt{Models\_paper/pretrain/emb\_1536} & Available (best.pt, last.pt, config/metrics) & Included as a larger-capacity pretrained checkpoint candidate; not part of current \texttt{results\_new/checkpoint\_*} evaluation tables/figures in this report version. \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Interpretation.}
+The emb\_768 and emb\_1536 folders are valid pretrained model outputs from the pretraining workflow. In this report revision, the quantitative evaluation figures and long-horizon analyses are tied to generated artifacts under \texttt{results\_new} (notably \texttt{checkpoint\_emb768}) whose metadata points to the archived emb\_768 checkpoint path. The emb\_1536 checkpoint is best treated as an additional model candidate that can be evaluated with the same pipeline and added as another comparison row/figure in a follow-up run.
+
+\section{Foundation Model Hyperparameters and Environment}
+
+This subsection is retained for project history. The configuration below corresponds to a \textbf{last-semester foundation run} and is \textbf{not} the primary model used for the current report's main evaluation figures/tables.
+
+The historical foundation model was trained on NVIDIA A100 GPUs with mixed-precision (AMP). 
+A small batch size was required because of the high parameter count of the Swin Transformer stacks, which quickly led to out-of-memory (OOM) conditions at the $64\times32$ resolution. 
+The table below summarizes that historical setup.
+
+\begin{table}[H]
+\centering
+\caption{Historical foundation model training configuration (last semester; not the primary model used in current evaluation).}
 \begin{tabular}{ll}
 \hline
 \textbf{Setting} & \textbf{Value / Description} \\
@@ -185,6 +357,24 @@ The model uses a relatively large embedding size (512) and deep Swin blocks, whi
   \item \textbf{Batch size and gradients}: Small batch sizes (2) were used due to memory constraints at this configuration; gradient noise was mitigated by appropriate learning-rate scheduling and gradient accumulation when necessary.
 \end{itemize}
 
+\section{Pretraining scaling results (embed dimension sweep)}
+
+To document pretraining work beyond a single checkpoint, I include an embedding-dimension sweep using the available pretraining histories (embed dimensions 512, 768, 1024, 1536, 2048). The figures below summarize both optimization trajectories and the trend of best validation loss with model size.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{publication_pretraining_curves.png}
+  \caption{Validation-loss trajectories for embedding-dimension sweep experiments during pretraining. Larger embedding dimensions generally converged to lower validation loss in these runs.}
+  \label{fig:pretrain_curves}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{publication_pretraining_scaling.png}
+  \caption{Pretraining scaling summary. Left: best validation loss versus embedding dimension. Right: final train/validation losses versus embedding dimension, showing the optimization-quality trend with model capacity.}
+  \label{fig:pretrain_scaling}
+\end{figure}
+
 % ---------------------------------------------------------
 \chapter{Losses and Metrics}
 
@@ -208,10 +398,14 @@ We used standard metrics and latitude weighting as described below.
 % ---------------------------------------------------------
 \chapter{Results and Figures}
 
+This chapter presents an extended evaluation pack with publication-style diagnostics. For fast turnaround, the comparison here uses two available pretraining checkpoints (Embed-768 and Embed-1024) with 60 autoregressive lead steps. The evaluation is useful for relative model behavior across variables and horizons; however, it is based on a short diagnostic sample and should be interpreted as a comparative analysis rather than a final large-sample benchmark.
+
+\section{Qualitative Forecast Structure}
+
 \begin{figure}[!htbp]
     \centering
-    \includegraphics[width=0.65\linewidth]{target_vs_pred.png}
-    \caption{Target vs Prediction--looking better then expected for me.}
+  \includegraphics[width=0.9\linewidth]{target_vs_pred.png}
+  \caption{Qualitative forecast example for geopotential at 500 hPa (mid-range lead). Left: truth, middle: prediction, right: signed error. The model captures broad synoptic structure while local magnitude errors remain visible.}
     \label{fig:sixpanel}
 \end{figure}
 
@@ -231,7 +425,7 @@ We used standard metrics and latitude weighting as described below.
     \includegraphics[width=\linewidth]{850.png}
     \caption{850 hPa}
   \end{subfigure}
-  \caption{Scatter plots of predicted vs.\ true values at three pressure levels.}
+  \caption{Density scatter diagnostics across pressure levels (250/500/850 hPa) using all variables available at each level. The 1:1 line is shown to indicate calibration and amplitude fidelity.}
   \label{fig:scatters}
 \end{figure}
 
@@ -240,14 +434,97 @@ We used standard metrics and latitude weighting as described below.
 \begin{figure}[!htbp]
   \centering
   \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{day1_forecast_emb768.png}
+    \caption{Embed-768 day-1 map diagnostics}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{day1_forecast_emb1024.png}
+    \caption{Embed-1024 day-1 map diagnostics}
+  \end{subfigure}
+  \caption{Day-1 forecast/truth/error map panels for the two compared checkpoints. Early-lead structure is strong in both models, with different error textures over specific regions.}
+  \label{fig:day1_models}
+\end{figure}
+
+\FloatBarrier
+
+\section{Global Skill Across Lead Time}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\linewidth]{publication_global_skill_panel.png}
+  \caption{Publication-style global skill panel: RMSE and ACC progression over lead time with interquartile bands across variables, comparing Embed-768 and Embed-1024 checkpoints.}
+  \label{fig:global_skill_panel}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{publication_horizon_bar_summary.png}
+  \caption{Horizon-wise summary at day 5, day 10, and day 15. RMSE and ACC are averaged over variables at each horizon, enabling direct checkpoint comparison at milestone leads.}
+  \label{fig:horizon_summary}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Horizon summary (mean over variables) for Embed-768 and Embed-1024.}
+\begin{tabular}{lcccccc}
+\hline
+\textbf{Model} & \textbf{RMSE D5} & \textbf{RMSE D10} & \textbf{RMSE D15} & \textbf{ACC D5} & \textbf{ACC D10} & \textbf{ACC D15} \\
+\hline
+Embed-768 & 71.960 & 118.121 & 152.034 & 0.8218 & 0.6200 & 0.4806 \\
+Embed-1024 & 64.995 & 115.693 & 148.728 & 0.8358 & 0.6230 & 0.4641 \\
+\hline
+\end{tabular}
+\end{table}
+
+At short lead (day 5), Embed-1024 improves RMSE and ACC simultaneously. By day 15, RMSE remains lower for Embed-1024, while ACC is slightly lower than Embed-768, suggesting better amplitude control but somewhat weaker anomaly-phase consistency at long lead.
+
+\begin{table}[H]
+\centering
+\caption{Checkpoint audit table from current 60-step evaluation summaries (mean over variables at 15-day horizon).}
+\begin{tabular}{lcc}
+\hline
+\textbf{Checkpoint} & \textbf{Mean RMSE} & \textbf{Mean ACC} \\
+\hline
+\texttt{checkpoint\_emb768} & 161.39 & 0.4083 \\
+\texttt{checkpoint\_emb768\_gpu2} & 150.22 & 0.4780 \\
+\texttt{checkpoint\_emb1024} & 148.73 & 0.4641 \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{LoRA rank sweep summary from current evaluation runs (15-day mean metrics).}
+\begin{tabular}{lccc}
+\hline
+\textbf{Track} & \textbf{Rank} & \textbf{Mean RMSE} & \textbf{Mean ACC} \\
+\hline
+Short-stage LoRA & 8 & 366.49 & 0.2801 \\
+Short-stage LoRA & 16 & 281.34 & 0.3412 \\
+Short-stage LoRA & 32 & 265.59 & 0.3568 \\
+Medium-stage LoRA & 8 & 297.40 & 0.3343 \\
+Medium-stage LoRA & 16 & 249.87 & 0.3447 \\
+Medium-stage LoRA & 32 & 228.42 & 0.3938 \\
+\hline
+\end{tabular}
+\end{table}
+
+\FloatBarrier
+
+\section{Variable-Wise and Grouped Diagnostics}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.48\textwidth}
     \includegraphics[width=\linewidth]{temporal_rmse.png}
-    \caption{Temporal RMSE}
+    \caption{Mean RMSE and ACC versus lead time}
   \end{subfigure}
   \begin{subfigure}[b]{0.48\textwidth}
     \includegraphics[width=\linewidth]{lat_err.png}
-    \caption{Latitude Error Envlop}
+    \caption{Latitude-wise error envelope}
   \end{subfigure}
-  \caption{Temporal and latitudinal diagnostics.}
+  \caption{Temporal and latitudinal diagnostics for the compared checkpoints. The latitudinal panel highlights where error concentration changes with forecast horizon.}
 \end{figure}
 
 \FloatBarrier
@@ -260,9 +537,156 @@ We used standard metrics and latitude weighting as described below.
   \end{subfigure}
   \begin{subfigure}[b]{0.48\textwidth}
     \includegraphics[width=\linewidth]{per_var_err.png}
-    \caption{Per-variable Error}
+    \caption{Per-variable RMSE and ACC summary}
   \end{subfigure}
-  \caption{Training diagnostics and variable-wise performance.}
+  \caption{Training diagnostics and variable-wise performance. Training curves summarize optimization behavior; variable bars identify strengths/weaknesses by channel.}
+\end{figure}
+
+\FloatBarrier
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\linewidth]{publication_variable_delta.png}
+  \caption{Per-variable change between checkpoints. Top: RMSE improvement (positive values indicate lower RMSE for Embed-1024 relative to Embed-768). Bottom: ACC gain (positive values indicate higher ACC for Embed-1024).}
+  \label{fig:variable_delta}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\linewidth]{publication_grouped_skill_curves.png}
+  \caption{Grouped diagnostics by physical variable family (surface, temperature, geopotential, humidity, zonal wind, meridional wind). Solid lines denote Embed-768; dashed lines denote Embed-1024.}
+  \label{fig:grouped_skill}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\linewidth]{publication_geopotential_levels.png}
+  \caption{Geopotential-specific diagnostics at 850/500/250 hPa. This figure provides the requested pressure-level-focused result set for RMSE and ACC behavior over lead time.}
+  \label{fig:geopotential_levels}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.96\linewidth]{publication_compare_heatmaps.png}
+  \caption{Heatmap comparison across all 20 variables and 60 lead steps: RMSE for each checkpoint, RMSE delta, and ACC delta. These maps provide compact, publication-style visibility into where each checkpoint performs better or worse.}
+  \label{fig:compare_heatmaps}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{poster_all20_rmse_emb768.png}
+    \caption{All-variable RMSE panels (Embed-768)}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{poster_all20_acc_emb768.png}
+    \caption{All-variable ACC panels (Embed-768)}
+  \end{subfigure}
+  \caption{Fine-grained per-variable trajectories over the full rollout horizon. These panels are useful for variable-level discussion in oral presentation and defense.}
+  \label{fig:all20_emb768}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.82\linewidth]{model_comparison.png}
+  \caption{Compact model comparison plot generated by the shared benchmark pipeline, summarizing mean RMSE/ACC progression for the compared checkpoints.}
+  \label{fig:model_comparison_compact}
+\end{figure}
+
+\section{Long-Horizon Stability Diagnostics (60--90 Days)}
+
+To support the report's model-stability discussion, I generated long-horizon diagnostics from the 90-day autoregressive evaluation output (360 lead steps at 6-hour cadence). In addition to full 90-day curves, a 60-day subset was extracted for intermediate-horizon analysis.
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/stability_reports/plots_60d/acc_drift_overview.png}
+    \caption{ACC drift overview (0--60 days)}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/stability_reports/plots_90d/acc_drift_overview.png}
+    \caption{ACC drift overview (0--90 days)}
+  \end{subfigure}
+  \caption{All-variable, surface, upper-air, T2M, and richer-variable ACC stability trajectories over long horizons.}
+  \label{fig:acc_drift_overview_60_90}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/stability_reports/plots_60d/acc_drift_key_variables.png}
+    \caption{Key-variable ACC trajectories (0--60 days)}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/stability_reports/plots_90d/acc_drift_key_variables.png}
+    \caption{Key-variable ACC trajectories (0--90 days)}
+  \end{subfigure}
+  \caption{Key-variable long-horizon ACC behavior for report variables (2m temperature, geopotential@500 hPa, total-column water vapour, and zonal wind@850 hPa).}
+  \label{fig:acc_keyvars_60_90}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Long-horizon stability summary (all-variable means) from autoregressive rollout metrics.}
+\begin{tabular}{lccccc}
+\hline
+\textbf{Horizon} & \textbf{Steps} & \textbf{ACC @ horizon} & \textbf{RMSE @ horizon} & \textbf{Last-7d mean ACC} & \textbf{Last-7d ACC slope/day} \\
+\hline
+60 days & 240 & 0.1178 & 396.408 & 0.1378 & -0.003923 \\
+90 days & 360 & -0.0447 & 517.542 & -0.0354 & -0.005728 \\
+\hline
+\end{tabular}
+\end{table}
+
+Interpretation: all-variable ACC remains positive at 60 days but continues to decay; by the 90-day horizon it becomes slightly negative, indicating near-climatology skill at the longest lead times. In the 90-day diagnostic summary, all-variable mean ACC crosses below 0 at approximately day 82.5, while the richer-variable mean crosses near day 88 and T2M remains above zero.
+
+\begin{table}[H]
+\centering
+\caption{ACC threshold crossing days (90-day diagnostic): first day where each series drops below threshold.}
+\begin{tabular}{lccc}
+\hline
+\textbf{Series} & \textbf{ACC $<0.8$} & \textbf{ACC $<0.6$} & \textbf{ACC $<0.4$} \\
+\hline
+All-variable mean & 4.25 & 7.00 & 13.00 \\
+T2M & 22.50 & 45.00 & 60.00 \\
+Geopotential@500 hPa & 6.50 & 11.50 & 25.75 \\
+TCWV & 5.50 & 12.00 & 29.50 \\
+U-wind@850 hPa & 3.50 & 5.50 & 8.00 \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Day-by-Day 15-Day Rich-Variable Rollout}
+
+For qualitative temporal evolution, I extracted one frame per day (day 1 to day 15) from the full 15-day rich-variable rollout (init time 2021-03-05T18:00). The full contact sheet is retained in the appendix, while larger day-level panels are shown here for better readability.
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_01_lead_024h.png}
+    \caption{Day 1 (lead 24h)}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_08_lead_192h.png}
+    \caption{Day 8 (lead 192h)}
+  \end{subfigure}
+
+  \vspace{6pt}
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_15_lead_360h.png}
+    \caption{Day 15 (lead 360h)}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_10_lead_240h.png}
+    \caption{Day 10 (lead 240h)}
+  \end{subfigure}
+  \caption{Larger day-level snapshots from the 15-day rich-variable rollout. These panels provide clearer qualitative evolution than a dense 15-cell contact sheet.}
+  \label{fig:rich_day_by_day_main}
 \end{figure}
 
 \FloatBarrier
@@ -274,7 +698,7 @@ We used standard metrics and latitude weighting as described below.
 \textbf{CODE:}\\
 \url{https://github.com/Artamta/Fuxi-Weather-Prediction}\\[1.6cm]
 
-One of the central technical observations of this work is the tradeoff between architecture depth and data resolution. At low spatial resolution (e.g., $64\times32$), deep transformer stacks (many Swin layers) can fail to learn meaningful gradients and may produce near-constant outputs — a symptom sometimes referred to as \emph{field collapse}. We observed this empirically:
+One of the central technical observations of this work is the tradeoff between architecture depth and data resolution. At low spatial resolution (e.g., $64\times32$), deep transformer stacks (many Swin layers) can fail to learn meaningful gradients and may produce near-constant outputs -- a symptom sometimes referred to as \emph{field collapse}. We observed this empirically:
 
 \begin{itemize}
   \item \textbf{Loss of local gradients:} Downsampling strongly attenuates the small- and medium-scale features that provide the model with local gradients to learn. Attention layers operating on coarse tokens therefore receive weak, low-variance signals.
@@ -282,12 +706,12 @@ One of the central technical observations of this work is the tradeoff between a
   \item \textbf{Practical mitigation:} We found better behavior when (a) keeping the Swin depth modest, (b) complementing attention with convolutional residual blocks that preserve local structure, and (c) carefully tuning learning rates, batch sizes, and normalization. Mixed-precision training and checkpoint warm-starts also helped stabilize deeper experiments.
 \end{itemize}
 
-This tradeoff motivates the need for higher-resolution training data (1° or 0.25°) or architectural modifications (stronger convolutional inductive biases, multi-scale positional encodings) to allow deeper transformers to be effectively trained.
+This tradeoff motivates the need for higher-resolution training data ($1^\circ$ or $0.25^\circ$) or architectural modifications (stronger convolutional inductive biases, multi-scale positional encodings) to allow deeper transformers to be effectively trained.
 
 % ---------------------------------------------------------
-\chapter{Future Work: Cascade & Autoregressive Training}
+\chapter{Future Work: Cascade, PEFT, and Architecture Refinement}
 
-Building on FuXi’s insight, a practical route to multi-day forecasting is an autoregressive cascade of specialized models. Each model focuses on a particular lead-time window (short, medium, long), which helps prevent a single model’s errors from compounding uncontrolled across very long horizons.
+Building on FuXi's insight, a practical route to multi-day forecasting is an autoregressive cascade of specialized models. Each model focuses on a particular lead-time window (short, medium, long), which helps prevent a single model's errors from compounding uncontrolled across very long horizons.
 
 \begin{figure}[!htbp]
     \centering
@@ -296,11 +720,32 @@ Building on FuXi’s insight, a practical route to multi-day forecasting is an a
     \label{fig:cascade}
 \end{figure}
 
+The current checkpoint comparison runs indicate that PEFT/LoRA requires further work in this setup. For example, at 15-day summary horizon, the non-LoRA emb768 checkpoint achieves mean RMSE/ACC of 161.39/0.408, while representative LoRA runs are weaker (e.g., rank-32 medium: 228.42/0.394; rank-16 medium: 249.87/0.345; rank-8 short: 366.49/0.280).
+
+\begin{table}[!htbp]
+\centering
+\begin{tabular}{lcc}
+\hline
+Run & Mean RMSE (15d) & Mean ACC (15d) \\
+\hline
+Emb768 baseline (non-LoRA) & 161.39 & 0.408 \\
+LoRA rank-32 (medium) & 228.42 & 0.394 \\
+LoRA rank-16 (medium) & 249.87 & 0.345 \\
+LoRA rank-8 (short) & 366.49 & 0.280 \\
+\hline
+\end{tabular}
+\caption{Observed 15-day rollout summary from current checkpoint comparison runs (lower RMSE and higher ACC are better).}
+\label{tab:peft_gap}
+\end{table}
+
 Planned extensions:
 \begin{itemize}
-  \item Train three models specialized for 0–5 d, 5–10 d, and 10–15 d; chain them autoregressively at inference time.
+  \item Train three models specialized for 0--5 d, 5--10 d, and 10--15 d; chain them autoregressively at inference time.
+  \item Run a structured PEFT ablation: stage-specific LoRA rank/alpha, expanded target modules, LoRA+partial-base updates, and scheduler tuning to close the current LoRA-vs-full-finetune gap.
+  \item Finalize reconstruction design by replacing the remaining output-head bilinear alignment with a fully learned upsampling/projection path while preserving exact $121\times240$ output shape.
+  \item Perform controlled Swin/U-Net architecture ablations (pre/mid/post depth split, window size, skip-projection design, and transposed-convolution settings) at $1.5^\circ$ and higher resolutions.
   \item Use small stochastic perturbations (e.g., Perlin-noise-like spatial perturbations) on initial conditions to generate ensembles and reduce sensitivity to deterministic biases.
-  \item Scale training to higher resolution and deeper Swin stacks with careful warm-starting from the foundation model.
+  \item Scale training to $1^\circ$ and $0.25^\circ$ grids with careful warm-starting from the foundation model and memory-efficient training strategies.
 \end{itemize}
 
 % ---------------------------------------------------------
@@ -309,11 +754,126 @@ Planned extensions:
 This project provided concrete, hands-on lessons:
 
 \begin{itemize}
-  \item \textbf{Pipeline engineering:} Building the cube embedding → Swin → U-Net pipeline reveals many practical pitfalls (shape mismatches, padding, window alignment) that are invisible in simple CV models.
+  \item \textbf{Pipeline engineering:} Building the cube embedding $\rightarrow$ Swin $\rightarrow$ U-Net pipeline reveals many practical pitfalls (shape mismatches, padding, window alignment) that are invisible in simple CV models.
   \item \textbf{Hyperparameter sensitivity:} Learning rate, batch size, and normalization choices have outsized effect on stability at low resolution.
   \item \textbf{Architecture choice:} Attention + convolution hybrids are currently the most robust design for global weather tasks, but they must be sized to match data resolution.
   \item \textbf{Compute considerations:} Training at high resolution and depth requires substantial compute (A100 or similar), careful checkpointing, and extensive tuning.
 \end{itemize}
+
+% ---------------------------------------------------------
+\appendix
+
+\chapter{Additional Rollout and Evaluation Diagnostics}
+
+\section{Full 15-Day Contact Sheet (Appendix View)}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.98\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_by_day_contact_sheet.png}
+  \caption{Complete D1--D15 contact sheet from the rich-variable rollout (init 2021-03-05T18:00).}
+  \label{fig:appendix_contact_sheet}
+\end{figure}
+
+\section{Additional Day-Level Panels}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.19\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_01_lead_024h.png}
+    \caption{D1}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.19\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_02_lead_048h.png}
+    \caption{D2}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.19\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_03_lead_072h.png}
+    \caption{D3}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.19\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_04_lead_096h.png}
+    \caption{D4}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.19\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_05_lead_120h.png}
+    \caption{D5}
+  \end{subfigure}
+  \caption{Early-horizon day-by-day frames (D1--D5).}
+  \label{fig:appendix_day_1_5}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.19\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_11_lead_264h.png}
+    \caption{D11}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.19\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_12_lead_288h.png}
+    \caption{D12}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.19\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_13_lead_312h.png}
+    \caption{D13}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.19\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_14_lead_336h.png}
+    \caption{D14}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.19\textwidth}
+    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_15_lead_360h.png}
+    \caption{D15}
+  \end{subfigure}
+  \caption{Late-horizon day-by-day frames (D11--D15).}
+  \label{fig:appendix_day_11_15}
+\end{figure}
+
+\section{Additional Metric Panels From Current Evaluations}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.49\textwidth}
+    \includegraphics[width=\linewidth]{../results_new/checkpoint_emb768/metrics/selected_acc_small_multiples.png}
+    \caption{Embed-768 selected ACC small multiples}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.49\textwidth}
+    \includegraphics[width=\linewidth]{../results_new/checkpoint_emb768/metrics/selected_rmse_small_multiples.png}
+    \caption{Embed-768 selected RMSE small multiples}
+  \end{subfigure}
+  \caption{Additional small-multiple diagnostics for the baseline AR768 checkpoint.}
+  \label{fig:appendix_small_multiples}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.49\textwidth}
+    \includegraphics[width=\linewidth]{../results_new/checkpoint_emb768/metrics/pressure_15_variable_metrics.png}
+    \caption{Pressure-level variable diagnostics}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.49\textwidth}
+    \includegraphics[width=\linewidth]{../results_new/checkpoint_emb768/metrics/surface_variable_metrics.png}
+    \caption{Surface-variable diagnostics}
+  \end{subfigure}
+  \caption{Expanded variable-group diagnostics from baseline evaluation outputs.}
+  \label{fig:appendix_variable_groups}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.49\textwidth}
+    \includegraphics[width=\linewidth]{../results_new/checkpoint_emb768/metrics/selected_acc_curves.png}
+    \caption{Baseline (\texttt{checkpoint\_emb768}) ACC curves}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.49\textwidth}
+    \includegraphics[width=\linewidth]{../results_new/checkpoint_lora_r32_medium_gpu2/metrics/selected_acc_curves.png}
+    \caption{LoRA r32 medium ACC curves}
+  \end{subfigure}
+  \caption{Baseline-vs-LoRA comparison panel (ACC) using current evaluation artifacts.}
+  \label{fig:appendix_baseline_lora_acc}
+\end{figure}
 
 % ---------------------------------------------------------
 \chapter*{Acknowledgements}
