@@ -89,6 +89,8 @@ PRIVATE_*.md
 # =========================
 src/Weather-Bench/
 .codex
+prof/raw_snapshot/
+notebooks/codebase_results_architecture_explorer.ipynb
 
 # Large local export bundle (keep local, do not push)
 share/fuxi_overleaf_bundle.zip
