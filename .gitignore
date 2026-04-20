@@ -1,5 +1,5 @@
 # =========================
-# 🔹 Python
+# Python
 # =========================
 __pycache__/
 *.pyc
@@ -9,88 +9,101 @@ __pycache__/
 
 # Virtual environments
 venv/
-.env/
 .venv/
+.env/
 
 # =========================
-# 🔹 Jupyter Notebooks
+# Jupyter
 # =========================
 .ipynb_checkpoints/
-*.ipynb
-
 
 # =========================
-# 🔹 Logs & Outputs
+# Logs / outputs
 # =========================
 logs/
 results/
+results_new/
+results_shared/
 outputs/
+*.log
+*.logs
 
 # =========================
-# 🔹 Data (VERY IMPORTANT)
+# Data / model artifacts
 # =========================
 data/
-
-# =========================
-# 🔹 Model checkpoints
-# =========================
 *.pt
 *.pth
 *.ckpt
 *.h5
 *.onnx
+*.npz
+*.nc
 
 # =========================
-# 🔹 Config / temp files
+# Report / LaTeX build artifacts
+# =========================
+report/*.aux
+report/*.bbl
+report/*.blg
+report/*.fdb_latexmk
+report/*.fls
+report/*.lof
+report/*.lot
+report/*.out
+report/*.toc
+report/*.synctex.gz
+
+# =========================
+# Temporary / backup files
 # =========================
 *.yaml~
 *.yml~
 *.tmp
-*.log
+*.bak
+*.swp
 
 # =========================
-# 🔹 OS files
+# OS / IDE
 # =========================
 .DS_Store
 Thumbs.db
-
-# =========================
-# 🔹 VS Code / IDE
-# =========================
 .vscode/
 .idea/
 
 # =========================
-# 🔹 Cluster / SLURM
+# Cluster / SLURM
 # =========================
 *.out
 *.err
 slurm-*
 
 # =========================
-# 🔹 Misc
-# =========================
-*.bak
-*.swp
-*.npz
-
-# =========================
-# 🔹 Personal local notes
+# Personal local notes
 # =========================
 LOCAL_*.md
 PRIVATE_*.md
 
-#others
-
-*.csv
-*.json
-*.log
-*.logs
-*.nc
-results_new/
-results_shared/
-
-
+# =========================
+# Local project-specific artifacts
+# =========================
 src/Weather-Bench/
-# Local overleaf export bundle
+.codex
+
+# Large local export bundle (keep local, do not push)
 share/fuxi_overleaf_bundle.zip
+
+# Generated pretraining metadata
+Models_paper/pretrain/**/config.json
+Models_paper/pretrain/**/history.csv
+Models_paper/pretrain/**/metrics.json
+
+# Generated report manifests and stability summaries
+prof/report/**/gif_manifest.json
+prof/report/stability_reports/**/*.csv
+prof/report/stability_reports/**/*.json
+
+# Generated overleaf bundle metadata
+share/fuxi_overleaf_bundle/extras/pretrain_scaling/**/config.json
+share/fuxi_overleaf_bundle/extras/pretrain_scaling/**/history.csv
+share/fuxi_overleaf_bundle/extras/prof/report/**/gif_manifest.json

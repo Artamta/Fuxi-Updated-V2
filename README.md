@@ -3,11 +3,16 @@
 FuXi-inspired global weather forecasting with a Swin + U-Net pipeline, autoregressive diagnostics, and cluster-ready training workflows.
 
 <p align="center">
-	<img src="prof/report/gifs_daybyday_init0_15d/t2m_rollout_15d_init0_20210305T1800.gif" alt="T2M rollout (15-day)" width="49%" />
-	<img src="prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800.gif" alt="Rich-variable rollout (15-day)" width="49%" />
+	<img src="prof/report/gifs_daybyday_init0_15d/t2m_rollout_15d_init0_20210305T1800.gif" alt="T2M rollout (15-day)" width="88%" />
 </p>
 
-<p align="center"><i>Left: T2M rollout (15-day). Right: Rich-variable rollout (15-day).</i></p>
+<p align="center"><i>T2M rollout (15-day).</i></p>
+
+<p align="center">
+	<img src="prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800.gif" alt="Rich-variable rollout (15-day)" width="88%" />
+</p>
+
+<p align="center"><i>Rich-variable rollout (15-day).</i></p>
 
 > For more information, refer to [report/report.pdf](report/report.pdf) and [report/report.tex](report/report.tex).
 
