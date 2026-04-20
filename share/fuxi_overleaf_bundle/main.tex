@@ -1,0 +1,465 @@
+% ---------------------------------------------------------
+% Semester Project Report (Final Polished Version - Updated)
+% Author: Ayush Raj, Roll No: 20221068
+% Supervisor: Dr. Bedartha Goswami
+% Department of Data Science, IISER Pune
+% Date: November 20, 2025
+% ---------------------------------------------------------
+
+\documentclass[12pt]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx,caption,subcaption,float}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{hyperref}
+\usepackage{cite}
+\usepackage{placeins}
+\usepackage{adjustbox}
+\usepackage{verbatim} % for verbatim blocks
+
+\geometry{margin=1in}
+\setstretch{1.15}
+
+\captionsetup{font=small,labelfont=bf,skip=6pt}
+\captionsetup[sub]{font=footnotesize,labelfont=bf,skip=4pt}
+
+% Reduce float spacing
+\setlength{\textfloatsep}{10pt}
+\setlength{\floatsep}{8pt}
+\setlength{\intextsep}{8pt}
+
+\begin{document}
+
+% ---------------------------------------------------------
+% Title Page (Improved, tighter, same structure)
+% ---------------------------------------------------------
+\begin{titlepage}
+\centering
+
+\vspace*{1.2cm}
+
+{\Large Indian Institute of Science Education and Research (IISER) Pune}\\[4pt]
+{\large Department of Data Science}\\[1.2cm]
+
+{\Huge\bfseries A FuXi-Inspired\\[4pt]
+Machine Learning Model for\\[4pt]
+Global Weather Forecasting}\\[1.2cm]
+
+{\Large Semester Project Report}\\[0.3cm]
+\rule{0.55\linewidth}{0.7pt}\\[1.0cm]
+
+{\large\textbf{Author}}\\[3pt]
+{\Large Ayush Raj}\\
+{\large Roll No: 20221068}\\[0.8cm]
+
+{\large\textbf{Supervisor}}\\[3pt]
+{\Large Dr.\ Bedartha Goswami}\\[1.3cm]
+
+\vfill
+{\footnotesize Project Repository: \url{https://github.com/Artamta/Fuxi-Weather-Prediction}}\\[0.2cm]
+{\large November 2025}
+
+\end{titlepage}
+
+
+% ---------------------------------------------------------
+% ABSTRACT
+% ---------------------------------------------------------
+\begin{abstract}
+We present a FuXi-inspired deep learning pipeline for single-step (6-hour) global weather forecasting on a coarse ($64\times32$) ERA5 grid. The model ingests two consecutive timesteps and predicts the next state for 20 channels (five surface and fifteen upper-air features). The architecture combines a 3D cube embedding, a reduced-depth Swin Transformer V2 encoder for hierarchical global context, and a U-Net-style decoder for spatial reconstruction. A $1\times1$ projection and bilinear interpolation produce the final forecast fields.
+
+Training was stable, but the limited spatial resolution caused oversmoothing and collapse toward climatological means. I present evaluation metrics (RMSE, ACC, latitude-weighted L1), qualitative comparison plots, and per-variable error analyses. Future extensions include higher-resolution experiments, deeper Swin stacks, autoregressive FuXi-style cascades, and ensemble uncertainty estimation.
+\end{abstract}
+
+% ---------------------------------------------------------
+\chapter{Introduction}
+
+Machine learning has advanced rapidly in global weather forecasting. Models such as FourCastNet, GraphCast, Pangu-Weather, and FuXi demonstrate that learning-based systems can match or outperform classical numerical weather prediction (NWP) while running significantly faster and at lower computational cost per forecast (Pathak et al.; Lam et al.; Bi et al.; Chen et al.).
+
+FuXi introduced a practical strategy for extending ML forecasts to longer lead times: instead of training a single model to forecast 15 days directly, FuXi trains a \emph{cascade} of specialized models that are chained autoregressively (0--5 d, 5--10 d, 10--15 d). Each model is optimized for its target window, which reduces accumulation of long-range errors and allows the use of model-specific regularization and perturbations (e.g., Perlin-noise-like initial perturbations in FuXi-style ensembles) to better capture forecast uncertainty. This cascaded approach mitigates the compounding of small biases that typically destroys forecast skill in a single monolithic model over long horizons.
+
+This semester project focuses on implementing the \emph{core} FuXi-like module (cube embedding $\rightarrow$ Swin encoder $\rightarrow$ U-Net decoder) and understanding the practical trade-offs of architecture depth, resolution, and training strategy at a coarse $64\times32$ resolution using the WeatherBench2 ERA5 dataset. The aim was to build a robust training pipeline, diagnose failure modes, and chart a path to a full autoregressive/cascade system in future work.
+
+% ---------------------------------------------------------
+\chapter{Model Architecture and Data Flow}
+
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=0.92\linewidth]{arc.png}
+    \caption{FuXi-inspired architecture used in this project. The model consists of cube embedding, Swin Transformer V2 encoder, U-Net-style decoder with skip connections, and final reconstruction.}
+    \label{fig:fuxi_architecture}
+\end{figure}
+
+A concise description of the data flow:
+\begin{enumerate}
+  \item \textbf{Input:} Two consecutive timesteps → tensor of shape $(B, C=20, T=2, H=32, W=64)$.
+  \item \textbf{Cube Embedding:} 3D convolutional blocks map local spatiotemporal cubes to latent tokens.
+  \item \textbf{Swin Transformer V2 Encoder:} Multi-level, shifted-window self-attention extracts global context.
+  \item \textbf{U-Net Decoder:} Hierarchical upsampling recovers spatial detail with skip connections.
+  \item \textbf{Projection \& Interpolation:} $1\times1$ convolution + bilinear interpolation outputs 20-channel forecasts.
+\end{enumerate}
+
+\section{Why Swin + U-Net}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.45\textwidth}
+    \includegraphics[width=\linewidth]{cube.png}
+    \caption{Cube Embedding (3D conv)}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.45\textwidth}
+    \includegraphics[width=\linewidth]{swin.png}
+    \caption{Swin Transformer Block}
+  \end{subfigure}
+
+  \vspace{6pt}
+  \begin{subfigure}[b]{0.7\textwidth}
+    \centering
+    \includegraphics[width=0.55\linewidth]{unet.png}
+    \caption{U-Net Decoder}
+  \end{subfigure}
+  \caption{Architectural building blocks.}
+  \label{fig:arch_blocks}
+\end{figure}
+
+\FloatBarrier
+
+% ---------------------------------------------------------
+\chapter{Training Setup and Foundation Model Details}
+
+We trained a foundation FuXi-like model as the starting point for this project. Key experimental settings (used to produce the foundation checkpoints referenced in this report) are listed below.
+
+\section{Foundation Model Hyperparameters and Environment}
+
+The foundation model was trained on NVIDIA A100 GPUs with mixed-precision (AMP). 
+A small batch size was required because of the high parameter count of the Swin Transformer stacks, which quickly led to out-of-memory (OOM) conditions at the $64\times32$ resolution. 
+The table below summarizes the key hyperparameters used in the first-stage FuXi-like foundation model.
+
+\begin{table}[H]
+\centering
+\caption{Summary of foundation model training configuration.}
+\begin{tabular}{ll}
+\hline
+\textbf{Setting} & \textbf{Value / Description} \\
+\hline
+Experiment name & \texttt{FuXi3Stage\_20251118\_005002} \\
+Train / Val / Test files & 1959--2017, 2018--2020, 2021--2023 \\
+Input channels & 20 variables (5 surface + 15 upper-air) \\
+History steps & 2 (two consecutive timesteps as input) \\
+Batch size & 2 (limited by A100 memory; deep Swin is expensive) \\
+Val/Test batch size & 1 \\
+Num workers & 55 (high I/O throughput on HPC cluster) \\
+Max epochs & 100 with early stopping (patience = 5) \\
+Learning rate & $1.5\times10^{-4}$ (AdamW) \\
+Weight decay & 0.02 \\
+Betas & $(0.9, 0.95)$ \\
+Seed & 42 \\
+Embed dimension & 512 \\
+Encoder dims & (512, 768, 960) three-stage hierarchy \\
+Swin depths & (3, 4, 6) blocks per stage \\
+Swin heads & (8, 12, 15) multi-head attention sizes \\
+Window size & 8 (shifted-window attention) \\
+Drop path rate & 0.15 (regularization for deep transformers) \\
+AMP & Enabled (to reduce memory footprint + faster training) \\
+Resume checkpoint &
+\texttt{fuxi\_epoch014.pt} (warm-start from previous run) \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Why these choices?}
+The model uses a relatively large embedding size (512) and deep Swin blocks, which dramatically increase memory consumption. Even on A100 GPUs, a batch size above 2 caused OOM errors. Using AMP helped reduce memory usage, while a high number of dataloader workers (55) ensured efficient data streaming from disk. Warm-starting from a previous checkpoint accelerated convergence and allowed exploration of architectural changes without restarting from scratch.
+
+\noindent\textbf{Compute:} training runs used NVIDIA A100 GPUs (mixed precision/AMP enabled) and a large dataloader worker count to keep GPUs fed. The large number of workers (e.g., 55) was required during high-throughput experiments on the cluster.
+
+\section{Training notes and observations}
+\begin{itemize}
+  \item \textbf{AMP and memory}: Mixed precision significantly reduced memory footprint and accelerated training, allowing larger embeddings and batch throughput.
+  \item \textbf{Checkpointing}: Training resumed from the foundation checkpoint above to continue experiments; this allowed rapid iteration on architecture and loss choices.
+  \item \textbf{Batch size and gradients}: Small batch sizes (2) were used due to memory constraints at this configuration; gradient noise was mitigated by appropriate learning-rate scheduling and gradient accumulation when necessary.
+\end{itemize}
+
+\section{Pretraining scaling results (embed dimension sweep)}
+
+To document pretraining work beyond a single checkpoint, I include an embedding-dimension sweep using the available pretraining histories (embed dimensions 512, 768, 1024, 1536, 2048). The figures below summarize both optimization trajectories and the trend of best validation loss with model size.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{publication_pretraining_curves.png}
+  \caption{Validation-loss trajectories for embedding-dimension sweep experiments during pretraining. Larger embedding dimensions generally converged to lower validation loss in these runs.}
+  \label{fig:pretrain_curves}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{publication_pretraining_scaling.png}
+  \caption{Pretraining scaling summary. Left: best validation loss versus embedding dimension. Right: final train/validation losses versus embedding dimension, showing the optimization-quality trend with model capacity.}
+  \label{fig:pretrain_scaling}
+\end{figure}
+
+% ---------------------------------------------------------
+\chapter{Losses and Metrics}
+
+We used standard metrics and latitude weighting as described below.
+
+\[
+\mathcal{L}_{\text{lat-L1}}=\frac{\sum_i \cos\phi_i\,|y_i-\hat{y}_i|}{\sum_i \cos\phi_i}
+\]
+
+\[
+\mathrm{RMSE}=\sqrt{\frac{1}{N}\sum_i (y_i-\hat{y}_i)^2}
+\]
+
+\[
+\mathrm{ACC}=\frac{\sum_i (y_i-\bar y)(\hat{y}_i-\overline{\hat{y}})}
+{\sqrt{\sum_i (y_i-\bar y)^2}\sqrt{\sum_i (\hat{y}_i-\overline{\hat{y}})^2}}
+\]
+
+\FloatBarrier
+
+% ---------------------------------------------------------
+\chapter{Results and Figures}
+
+This chapter presents an extended evaluation pack with publication-style diagnostics. For fast turnaround, the comparison here uses two available pretraining checkpoints (Embed-768 and Embed-1024) with 60 autoregressive lead steps. The evaluation is useful for relative model behavior across variables and horizons; however, it is based on a short diagnostic sample and should be interpreted as a comparative analysis rather than a final large-sample benchmark.
+
+\section{Qualitative Forecast Structure}
+
+\begin{figure}[!htbp]
+    \centering
+  \includegraphics[width=0.9\linewidth]{target_vs_pred.png}
+  \caption{Qualitative forecast example for geopotential at 500 hPa (mid-range lead). Left: truth, middle: prediction, right: signed error. The model captures broad synoptic structure while local magnitude errors remain visible.}
+    \label{fig:sixpanel}
+\end{figure}
+
+\FloatBarrier
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.32\textwidth}
+    \includegraphics[width=\linewidth]{250.png}
+    \caption{250 hPa}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.32\textwidth}
+    \includegraphics[width=\linewidth]{500.png}
+    \caption{500 hPa}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.32\textwidth}
+    \includegraphics[width=\linewidth]{850.png}
+    \caption{850 hPa}
+  \end{subfigure}
+  \caption{Density scatter diagnostics across pressure levels (250/500/850 hPa) using all variables available at each level. The 1:1 line is shown to indicate calibration and amplitude fidelity.}
+  \label{fig:scatters}
+\end{figure}
+
+\FloatBarrier
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{day1_forecast_emb768.png}
+    \caption{Embed-768 day-1 map diagnostics}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{day1_forecast_emb1024.png}
+    \caption{Embed-1024 day-1 map diagnostics}
+  \end{subfigure}
+  \caption{Day-1 forecast/truth/error map panels for the two compared checkpoints. Early-lead structure is strong in both models, with different error textures over specific regions.}
+  \label{fig:day1_models}
+\end{figure}
+
+\FloatBarrier
+
+\section{Global Skill Across Lead Time}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\linewidth]{publication_global_skill_panel.png}
+  \caption{Publication-style global skill panel: RMSE and ACC progression over lead time with interquartile bands across variables, comparing Embed-768 and Embed-1024 checkpoints.}
+  \label{fig:global_skill_panel}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{publication_horizon_bar_summary.png}
+  \caption{Horizon-wise summary at day 5, day 10, and day 15. RMSE and ACC are averaged over variables at each horizon, enabling direct checkpoint comparison at milestone leads.}
+  \label{fig:horizon_summary}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Horizon summary (mean over variables) for Embed-768 and Embed-1024.}
+\begin{tabular}{lcccccc}
+\hline
+\textbf{Model} & \textbf{RMSE D5} & \textbf{RMSE D10} & \textbf{RMSE D15} & \textbf{ACC D5} & \textbf{ACC D10} & \textbf{ACC D15} \\
+\hline
+Embed-768 & 71.960 & 118.121 & 152.034 & 0.8218 & 0.6200 & 0.4806 \\
+Embed-1024 & 64.995 & 115.693 & 148.728 & 0.8358 & 0.6230 & 0.4641 \\
+\hline
+\end{tabular}
+\end{table}
+
+At short lead (day 5), Embed-1024 improves RMSE and ACC simultaneously. By day 15, RMSE remains lower for Embed-1024, while ACC is slightly lower than Embed-768, suggesting better amplitude control but somewhat weaker anomaly-phase consistency at long lead.
+
+\FloatBarrier
+
+\section{Variable-Wise and Grouped Diagnostics}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{temporal_rmse.png}
+    \caption{Mean RMSE and ACC versus lead time}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{lat_err.png}
+    \caption{Latitude-wise error envelope}
+  \end{subfigure}
+  \caption{Temporal and latitudinal diagnostics for the compared checkpoints. The latitudinal panel highlights where error concentration changes with forecast horizon.}
+\end{figure}
+
+\FloatBarrier
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{train_val.png}
+    \caption{Training/Validation Loss}
+  \end{subfigure}
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{per_var_err.png}
+    \caption{Per-variable RMSE and ACC summary}
+  \end{subfigure}
+  \caption{Training diagnostics and variable-wise performance. Training curves summarize optimization behavior; variable bars identify strengths/weaknesses by channel.}
+\end{figure}
+
+\FloatBarrier
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\linewidth]{publication_variable_delta.png}
+  \caption{Per-variable change between checkpoints. Top: RMSE improvement (positive values indicate lower RMSE for Embed-1024 relative to Embed-768). Bottom: ACC gain (positive values indicate higher ACC for Embed-1024).}
+  \label{fig:variable_delta}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\linewidth]{publication_grouped_skill_curves.png}
+  \caption{Grouped diagnostics by physical variable family (surface, temperature, geopotential, humidity, zonal wind, meridional wind). Solid lines denote Embed-768; dashed lines denote Embed-1024.}
+  \label{fig:grouped_skill}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\linewidth]{publication_geopotential_levels.png}
+  \caption{Geopotential-specific diagnostics at 850/500/250 hPa. This figure provides the requested pressure-level-focused result set for RMSE and ACC behavior over lead time.}
+  \label{fig:geopotential_levels}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.96\linewidth]{publication_compare_heatmaps.png}
+  \caption{Heatmap comparison across all 20 variables and 60 lead steps: RMSE for each checkpoint, RMSE delta, and ACC delta. These maps provide compact, publication-style visibility into where each checkpoint performs better or worse.}
+  \label{fig:compare_heatmaps}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{poster_all20_rmse_emb768.png}
+    \caption{All-variable RMSE panels (Embed-768)}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.48\textwidth}
+    \includegraphics[width=\linewidth]{poster_all20_acc_emb768.png}
+    \caption{All-variable ACC panels (Embed-768)}
+  \end{subfigure}
+  \caption{Fine-grained per-variable trajectories over the full rollout horizon. These panels are useful for variable-level discussion in oral presentation and defense.}
+  \label{fig:all20_emb768}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.82\linewidth]{model_comparison.png}
+  \caption{Compact model comparison plot generated by the shared benchmark pipeline, summarizing mean RMSE/ACC progression for the compared checkpoints.}
+  \label{fig:model_comparison_compact}
+\end{figure}
+
+\FloatBarrier
+
+% ---------------------------------------------------------
+\chapter{Challenges: Depth vs. Resolution Tradeoff}
+
+
+\textbf{CODE:}\\
+\url{https://github.com/Artamta/Fuxi-Weather-Prediction}\\[1.6cm]
+
+One of the central technical observations of this work is the tradeoff between architecture depth and data resolution. At low spatial resolution (e.g., $64\times32$), deep transformer stacks (many Swin layers) can fail to learn meaningful gradients and may produce near-constant outputs — a symptom sometimes referred to as \emph{field collapse}. We observed this empirically:
+
+\begin{itemize}
+  \item \textbf{Loss of local gradients:} Downsampling strongly attenuates the small- and medium-scale features that provide the model with local gradients to learn. Attention layers operating on coarse tokens therefore receive weak, low-variance signals.
+  \item \textbf{Difficulty for deep attention stacks:} Deeper Swin stacks increase representational capacity but also require informative gradients across layers. On low-resolution inputs, the gradients can vanish or fail to propagate structured spatial information, causing the network to converge to a trivial, low-variance solution.
+  \item \textbf{Practical mitigation:} We found better behavior when (a) keeping the Swin depth modest, (b) complementing attention with convolutional residual blocks that preserve local structure, and (c) carefully tuning learning rates, batch sizes, and normalization. Mixed-precision training and checkpoint warm-starts also helped stabilize deeper experiments.
+\end{itemize}
+
+This tradeoff motivates the need for higher-resolution training data (1° or 0.25°) or architectural modifications (stronger convolutional inductive biases, multi-scale positional encodings) to allow deeper transformers to be effectively trained.
+
+% ---------------------------------------------------------
+\chapter{Future Work: Cascade & Autoregressive Training}
+
+Building on FuXi’s insight, a practical route to multi-day forecasting is an autoregressive cascade of specialized models. Each model focuses on a particular lead-time window (short, medium, long), which helps prevent a single model’s errors from compounding uncontrolled across very long horizons.
+
+\begin{figure}[!htbp]
+    \centering
+    \includegraphics[width=0.85\linewidth]{cascade.png}
+    \caption{FuXi-style autoregressive cascade (short/medium/long). The cascade trains specialized models for successive windows and chains them at inference time. Perlin-noise-style perturbations can be applied to generate ensemble members and stabilize training.}
+    \label{fig:cascade}
+\end{figure}
+
+Planned extensions:
+\begin{itemize}
+  \item Train three models specialized for 0–5 d, 5–10 d, and 10–15 d; chain them autoregressively at inference time.
+  \item Use small stochastic perturbations (e.g., Perlin-noise-like spatial perturbations) on initial conditions to generate ensembles and reduce sensitivity to deterministic biases.
+  \item Scale training to higher resolution and deeper Swin stacks with careful warm-starting from the foundation model.
+\end{itemize}
+
+% ---------------------------------------------------------
+\chapter{Practical Lessons and Final Remarks}
+
+This project provided concrete, hands-on lessons:
+
+\begin{itemize}
+  \item \textbf{Pipeline engineering:} Building the cube embedding → Swin → U-Net pipeline reveals many practical pitfalls (shape mismatches, padding, window alignment) that are invisible in simple CV models.
+  \item \textbf{Hyperparameter sensitivity:} Learning rate, batch size, and normalization choices have outsized effect on stability at low resolution.
+  \item \textbf{Architecture choice:} Attention + convolution hybrids are currently the most robust design for global weather tasks, but they must be sized to match data resolution.
+  \item \textbf{Compute considerations:} Training at high resolution and depth requires substantial compute (A100 or similar), careful checkpointing, and extensive tuning.
+\end{itemize}
+
+% ---------------------------------------------------------
+\chapter*{Acknowledgements}
+
+I thank Dr.~Bedartha Goswami for guidance and the IISER Pune HPC team for computational resources. I also thank the WeatherBench2 and ERA5 providers for the dataset used in this work.
+
+% ---------------------------------------------------------
+\begin{thebibliography}{9}
+
+\bibitem{fuxi}
+Chen, L. et al. (2023). \textit{FuXi: A cascade machine learning forecasting system for 15-day global weather forecast.}
+
+\bibitem{weatherbench2}
+Rasp, S. et al. (2023). \textit{WeatherBench2: A benchmark for next-generation data-driven global weather models.}
+
+\bibitem{swin}
+Liu, Z. et al. (2021). \textit{Swin Transformer: Hierarchical Vision Transformer using shifted windows.}
+
+\bibitem{unet}
+Ronneberger, O. et al. (2015). \textit{U-Net: Convolutional networks for biomedical image segmentation.}
+
+\end{thebibliography}
+
+\end{document}

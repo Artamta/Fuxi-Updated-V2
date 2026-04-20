@@ -1,0 +1,16 @@
+day,frame_index,lead_hours,file
+1,3,24,day_01_lead_024h.png
+2,7,48,day_02_lead_048h.png
+3,11,72,day_03_lead_072h.png
+4,15,96,day_04_lead_096h.png
+5,19,120,day_05_lead_120h.png
+6,23,144,day_06_lead_144h.png
+7,27,168,day_07_lead_168h.png
+8,31,192,day_08_lead_192h.png
+9,35,216,day_09_lead_216h.png
+10,39,240,day_10_lead_240h.png
+11,43,264,day_11_lead_264h.png
+12,47,288,day_12_lead_288h.png
+13,51,312,day_13_lead_312h.png
+14,55,336,day_14_lead_336h.png
+15,59,360,day_15_lead_360h.png

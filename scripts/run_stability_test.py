@@ -79,7 +79,29 @@ def choose_climo_cache(root: Path, explicit: Optional[str], use_saved: bool) -> 
     return max(local, key=lambda p: p.stat().st_mtime).resolve()
 
 
+def resolve_eval_climo_cache(
+    root: Path,
+    outdir: Path,
+    selected_cache: Optional[Path],
+    use_saved: bool,
+) -> Path:
+    if selected_cache is not None:
+        return selected_cache
+
+    if use_saved:
+        cache_dir = root / "results" / "climatology_cache" / "emb_768"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir / "climo_auto_emb768.npz"
+
+    # Force a writable, run-local cache path when user disables saved cache reuse.
+    return outdir / "climo_cache_autogen.npz"
+
+
 def run_eval(root: Path, ckpt: Path, outdir: Path, args: argparse.Namespace, climo_cache: Optional[Path]) -> None:
+    device_arg = args.device
+    if args.gpu_index is not None and device_arg == "auto":
+        device_arg = "cuda"
+
     cmd = [
         sys.executable,
         "-u",
@@ -90,7 +112,7 @@ def run_eval(root: Path, ckpt: Path, outdir: Path, args: argparse.Namespace, cli
         "--output-dir",
         str(outdir),
         "--device",
-        args.device,
+        device_arg,
         "--amp",
         args.amp,
         "--rollout-steps",
@@ -115,6 +137,9 @@ def run_eval(root: Path, ckpt: Path, outdir: Path, args: argparse.Namespace, cli
     print(" ".join(cmd))
     env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
+    if args.gpu_index is not None:
+        env["CUDA_VISIBLE_DEVICES"] = str(int(args.gpu_index))
+        print(f"Using CUDA_VISIBLE_DEVICES={env['CUDA_VISIBLE_DEVICES']} (requested gpu index)")
     subprocess.run(cmd, cwd=root, env=env, check=True)
 
 
@@ -237,6 +262,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default="cuda")
     parser.add_argument("--amp", choices=["none", "fp16", "bf16"], default="bf16")
     parser.add_argument(
+        "--gpu-index",
+        type=int,
+        default=None,
+        help="Optional physical GPU index (e.g. 2 for A100 GPU2). Sets CUDA_VISIBLE_DEVICES.",
+    )
+    parser.add_argument(
         "--plot-vars",
         type=str,
         default="2m_temperature,geopotential_plev500,u_component_of_wind_plev250",
@@ -250,15 +281,31 @@ def main() -> None:
     root = repo_root()
 
     ckpt = choose_checkpoint(root, args.checkpoint, bool(args.random))
-    climo_cache = choose_climo_cache(root, args.climo_cache, bool(args.use_saved_climatology))
+    selected_climo_cache = choose_climo_cache(root, args.climo_cache, bool(args.use_saved_climatology))
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     outdir = root / "results" / f"stability_run_{ts}"
     outdir.mkdir(parents=True, exist_ok=True)
 
+    climo_cache = resolve_eval_climo_cache(
+        root=root,
+        outdir=outdir,
+        selected_cache=selected_climo_cache,
+        use_saved=bool(args.use_saved_climatology),
+    )
+
+    if args.rollout_steps >= 240 and args.batch_size > 1:
+        print(
+            f"Long-horizon rollout detected ({args.rollout_steps} steps); "
+            f"forcing batch_size=1 for stability (requested {args.batch_size})."
+        )
+        args.batch_size = 1
+
     print(f"Repository root: {root}")
     print(f"Selected checkpoint: {ckpt}")
-    print(f"Climatology cache: {climo_cache if climo_cache else 'auto-compute'}")
+    print(f"Climatology cache: {climo_cache}")
+    if args.gpu_index is not None:
+        print(f"Requested GPU index: {args.gpu_index}")
     print(f"Output directory: {outdir}")
 
     run_eval(root, ckpt, outdir, args, climo_cache)

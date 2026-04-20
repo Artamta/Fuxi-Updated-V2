@@ -1,39 +1,56 @@
-# Fuxi Weather Model (V2)
+# FuXi Weather Model (V2)
 
-A modular and scalable implementation of the Fuxi weather forecasting model, designed for efficient pretraining and finetuning on large-scale atmospheric datasets. This repository provides a clean, cluster-ready pipeline for experimentation and reproducible research.
+FuXi-inspired global weather forecasting with a Swin + U-Net pipeline, autoregressive diagnostics, and cluster-ready training workflows.
 
----
-> 🔗 **Previous Work:**
-> This repository is a refactored and improved version of an earlier implementation.
-> 👉 https://github.com/Artamta/Fuxi-Weather-Prediction
-- --
+<p align="center">
+	<img src="prof/report/gifs_daybyday_init0_15d/t2m_rollout_15d_init0_20210305T1800.gif" alt="T2M rollout (15-day)" width="49%" />
+	<img src="prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800.gif" alt="Rich-variable rollout (15-day)" width="49%" />
+</p>
 
-##  Features
+<p align="center"><i>Left: T2M rollout (15-day). Right: Rich-variable rollout (15-day).</i></p>
 
-* Modular architecture (models, training, evaluation separated)
-* Pretraining and finetuning pipelines
-* SLURM-based cluster support
-* Config-driven experiments
-* Clean and extensible codebase
+> For more information, refer to [report/report.pdf](report/report.pdf) and [report/report.tex](report/report.tex).
 
 ---
 
-## 📂 Project Structure
+## Previous Work
 
+This repository is a refactored and improved version of:
+https://github.com/Artamta/Fuxi-Weather-Prediction
+
+## Highlights
+
+- Modular architecture with clear separation of model, training, and evaluation
+- Pretraining and finetuning pipelines
+- SLURM-ready scripts for HPC execution
+- Config-driven experiments for reproducibility
+- Diagnostics for RMSE, ACC, and long-horizon rollout behavior
+
+## Method Overview
+
+The model follows a FuXi-inspired design:
+- 3D cube embedding for spatiotemporal tokenization
+- Swin-style transformer blocks for global context
+- U-Net-style decoder for spatial reconstruction
+- Autoregressive rollout analysis for lead-time skill trends
+
+## Project Structure
+
+```text
+fuxi_new/
+|-- src/                  core implementation
+|-- configs/              experiment configurations
+|-- scripts/              local and cluster run scripts
+|-- report/               report source and compiled document
+|-- prof/report/          gifs and diagnostics used in analysis
+|-- notebooks/            experiments and visualization
+|-- data/                 datasets (not tracked)
+|-- logs/                 training logs (not tracked)
+|-- results/              outputs (not tracked)
+`-- results_new/          refreshed evaluation outputs
 ```
-fuxi-v2/
-│── src/            # core implementation
-│── configs/        # experiment configurations
-│── scripts/        # cluster run scripts
-│── notebooks/      # experiments & visualization
-│── data/           # datasets (ignored)
-│── logs/           # training logs (ignored)
-│── results/        # outputs (ignored)
-```
 
----
-
-##  Installation
+## Installation
 
 ```bash
 git clone https://github.com/Artamta/Fuxi-Updated-V2.git
@@ -41,9 +58,7 @@ cd Fuxi-Updated-V2
 pip install -r requirements.txt
 ```
 
----
-
-## ▶ Usage
+## Usage
 
 ### Pretraining
 
@@ -57,40 +72,26 @@ bash scripts/pretrain.sh
 bash scripts/finetune.sh
 ```
 
----
+### Example Evaluation Comparison
 
-##  Method Overview
+```bash
+bash scripts/run_eval_compare_single_gpu.sh
+```
 
-The model leverages transformer-based architectures (including Swin-style components) to capture spatiotemporal dependencies in weather data.
+## Results
 
-The pipeline consists of:
+Model artifacts, logs, and checkpoints are generated locally and excluded from version control.
 
-* Pretraining on large-scale datasets
-* Finetuning for downstream forecasting tasks
-* Evaluation using custom metrics and analysis tools
+## Report
 
----
+- Full report: [report/report.pdf](report/report.pdf)
+- Source: [report/report.tex](report/report.tex)
 
-##  Results
-
-Results, logs, and checkpoints are stored locally and excluded from version control for efficiency.
-
----
-
-## 📜 License
+## License
 
 This project is licensed under the MIT License.
-See the LICENSE file for details.
+See [LICENSE](LICENSE) for details.
 
----
+## Acknowledgements
 
-## 🤝 Acknowledgements
-
-This work was carried out under the guidance of Dr. Bedartha Goswami at the Machine Learning for Climate Lab, IISER Pune. The authors acknowledge the use of IISER Pune HPC resources for computational support.
-
-
----
-
-## 📌 Note
-
-This repository is a refactored and production-ready version of an earlier experimental codebase developed over several months.
+This work was carried out under the guidance of Dr. Bedartha Goswami at the Machine Learning for Climate Lab, IISER Pune. The authors acknowledge IISER Pune HPC resources for computational support.

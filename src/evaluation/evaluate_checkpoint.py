@@ -125,7 +125,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stats-samples", type=int, default=256)
     parser.add_argument("--history-steps", type=int, default=2)
 
-    parser.add_argument("--device", type=str, choices=["auto", "cuda", "cpu"], default="auto")
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="Device selector: auto, cpu, cuda, or cuda:<index> (for example cuda:2)",
+    )
     parser.add_argument("--amp", type=str, choices=["none", "fp16", "bf16"], default="bf16")
 
     parser.add_argument("--output-dir", type=str, default=None)
@@ -391,15 +396,30 @@ class RolloutDataset(Dataset):
 
 
 def choose_device(device_mode: str) -> torch.device:
-    if device_mode == "cpu":
+    mode = str(device_mode).strip().lower()
+
+    if mode == "cpu":
         return torch.device("cpu")
-    if device_mode == "cuda":
+    if mode == "cuda":
         if not torch.cuda.is_available():
             raise RuntimeError("Requested CUDA but CUDA is unavailable.")
         return torch.device("cuda:0")
-    if torch.cuda.is_available():
+    if mode.startswith("cuda:"):
+        if not torch.cuda.is_available():
+            raise RuntimeError("Requested CUDA device index but CUDA is unavailable.")
+        idx_text = mode.split(":", 1)[1]
+        if not idx_text.isdigit():
+            raise ValueError(f"Invalid CUDA device format '{device_mode}'. Use cuda:<index>.")
+        idx = int(idx_text)
+        n = torch.cuda.device_count()
+        if idx < 0 or idx >= n:
+            raise ValueError(f"Requested CUDA device {idx}, but only {n} device(s) are visible.")
+        return torch.device(f"cuda:{idx}")
+    if mode == "auto" and torch.cuda.is_available():
         return torch.device("cuda:0")
-    return torch.device("cpu")
+    if mode == "auto":
+        return torch.device("cpu")
+    raise ValueError(f"Unsupported device option '{device_mode}'.")
 
 
 def autocast_ctx(device: torch.device, amp: str):
@@ -690,7 +710,7 @@ def main() -> None:
     spec, ckpt = resolve_spec_from_checkpoint(args)
     device = choose_device(args.device)
     if device.type == "cuda":
-        torch.cuda.set_device(0)
+        torch.cuda.set_device(device)
         torch.backends.cudnn.benchmark = True
 
     pressure_vars, surface_vars, notes = resolve_variable_names(

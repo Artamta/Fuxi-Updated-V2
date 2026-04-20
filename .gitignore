@@ -92,3 +92,5 @@ results_shared/
 
 
 src/Weather-Bench/
+# Local overleaf export bundle
+share/fuxi_overleaf_bundle.zip

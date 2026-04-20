@@ -146,6 +146,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--init-end", type=str, default=None)
     parser.add_argument("--init-stride", type=int, default=1)
     parser.add_argument("--max-inits", type=int, default=1)
+    parser.add_argument(
+        "--init-random-sampling",
+        action="store_true",
+        help="Randomly sample selected init times after filtering/stride (reproducible with --init-seed)",
+    )
+    parser.add_argument(
+        "--init-seed",
+        type=int,
+        default=42,
+        help="Seed used when --init-random-sampling is enabled",
+    )
 
     parser.add_argument("--rollout-steps", type=int, default=60)
     parser.add_argument("--batch-size", type=int, default=1)
@@ -390,6 +401,8 @@ def select_start_positions(
     init_end: Optional[str],
     init_stride: int,
     max_inits: Optional[int],
+    random_sampling: bool,
+    random_seed: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n_eval = int(eval_time_indices.shape[0])
     usable = n_eval - history_steps - rollout_steps + 1
@@ -418,9 +431,17 @@ def select_start_positions(
     starts = starts[::stride]
     init_times_ns = init_times_ns[::stride]
 
+    if random_sampling and max_inits is not None and starts.size > int(max_inits):
+        rng = np.random.default_rng(int(random_seed))
+        choice = rng.choice(starts.shape[0], size=int(max_inits), replace=False)
+        choice = np.sort(choice.astype(np.int64))
+        starts = starts[choice]
+        init_times_ns = init_times_ns[choice]
+
     if max_inits is not None:
-        starts = starts[: int(max_inits)]
-        init_times_ns = init_times_ns[: int(max_inits)]
+        limit = int(max_inits)
+        starts = starts[:limit]
+        init_times_ns = init_times_ns[:limit]
 
     if starts.size == 0:
         raise ValueError("No valid init times selected. Adjust --init-* options.")
@@ -806,6 +827,8 @@ def main() -> None:
             init_end=args.init_end,
             init_stride=args.init_stride,
             max_inits=args.max_inits,
+            random_sampling=bool(args.init_random_sampling),
+            random_seed=int(args.init_seed),
         )
 
         est_gb = estimate_output_gb(
@@ -916,6 +939,8 @@ def main() -> None:
                 np.datetime_as_string(t.astype("datetime64[s]"), unit="s")
                 for t in init_times.astype("datetime64[ns]")
             ],
+            "init_random_sampling": bool(args.init_random_sampling),
+            "init_seed": int(args.init_seed),
             "rollout_steps": int(args.rollout_steps),
             "lead_hours": (lead_steps * 6).tolist(),
             "channels": accessor.var_names,

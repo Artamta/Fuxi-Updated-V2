@@ -1,0 +1,151 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
+\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
+\global\let\oldcontentsline\contentsline
+\gdef\contentsline#1#2#3#4{\oldcontentsline{#1}{#2}{#3}}
+\global\let\oldnewlabel\newlabel
+\gdef\newlabel#1#2{\newlabelxx{#1}#2}
+\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\ifx\hyper@anchor\@undefined
+\let\contentsline\oldcontentsline
+\let\newlabel\oldnewlabel
+\fi}
+\fi}
+\global\let\hyper@last\relax 
+\gdef\HyperFirstAtBeginDocument#1{#1}
+\providecommand*\HyPL@Entry[1]{}
+\HyPL@Entry{0<</S/D>>}
+\providecommand \oddpage@label [2]{}
+\HyPL@Entry{1<</S/D>>}
+\HyPL@Entry{2<</S/D>>}
+\@writefile{toc}{\contentsline {chapter}{\numberline {1}Introduction}{1}{chapter.1}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {chapter}{\numberline {2}Model Architecture and Data Flow}{2}{chapter.2}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{lof}{\contentsline {figure}{\numberline {2.1}{\ignorespaces FuXi-inspired architecture used in this project. The model consists of cube embedding, Swin Transformer V2 encoder, U-Net-style decoder with skip connections, and final reconstruction.\relax }}{2}{figure.caption.1}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:fuxi_architecture}{{2.1}{2}{FuXi-inspired architecture used in this project. The model consists of cube embedding, Swin Transformer V2 encoder, U-Net-style decoder with skip connections, and final reconstruction.\relax }{figure.caption.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2.2}{\ignorespaces Simplified FuXi architecture overview used as a high-level reference before detailed block-level discussion.\relax }}{3}{figure.caption.2}\protected@file@percent }
+\newlabel{fig:fuxi_basic_architecture}{{2.2}{3}{Simplified FuXi architecture overview used as a high-level reference before detailed block-level discussion.\relax }{figure.caption.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2.3}{\ignorespaces Submission architecture references provided for this project: full FuXi-cascade context and Swin block-level view.\relax }}{3}{figure.caption.3}\protected@file@percent }
+\newlabel{fig:submission_arch_refs}{{2.3}{3}{Submission architecture references provided for this project: full FuXi-cascade context and Swin block-level view.\relax }{figure.caption.3}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2.1}Why Swin + U-Net}{4}{section.2.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2.4}{\ignorespaces Architectural building blocks.\relax }}{4}{figure.caption.4}\protected@file@percent }
+\newlabel{fig:arch_blocks}{{2.4}{4}{Architectural building blocks.\relax }{figure.caption.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2.2}Implementation-Level Tensor Flow (Current AR768 Setup)}{4}{section.2.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2.1}{\ignorespaces Layer-wise tensor dimensions for the current AR768 forward path ($H\times W=121\times 240$).\relax }}{5}{table.caption.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2.2}{\ignorespaces Convolutional operators used in the implemented FuXi blocks.\relax }}{5}{table.caption.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{How this differs from vanilla Swin and vanilla U-Net.}{5}{section*.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Why this connection works in practice.}{5}{section*.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {3}Training Setup and Configuration Audit}{6}{chapter.3}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {3.1}Current AR768 Cascade Settings (Used In Main Experiments)}{6}{section.3.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3.1}{\ignorespaces Shared AR768 cascade hyperparameters from current config files.\relax }}{7}{table.caption.9}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3.2}{\ignorespaces Stage-specific AR768 cascade settings (current configs).\relax }}{7}{table.caption.10}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3.3}{\ignorespaces Current AR768 LoRA short-stage config used for PEFT runs.\relax }}{7}{table.caption.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.2}Checkpoint Provenance: emb\_768 and emb\_1536}{7}{section.3.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3.4}{\ignorespaces Status of the two requested pretrained model directories in the current report pipeline.\relax }}{8}{table.caption.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Interpretation.}{8}{section*.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.3}Foundation Model Hyperparameters and Environment}{8}{section.3.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3.5}{\ignorespaces Historical foundation model training configuration (last semester; not the primary model used in current evaluation).\relax }}{9}{table.caption.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Why these choices?}{9}{section*.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.4}Training notes and observations}{9}{section.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.5}Pretraining scaling results (embed dimension sweep)}{10}{section.3.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3.1}{\ignorespaces Validation-loss trajectories for embedding-dimension sweep experiments during pretraining. Larger embedding dimensions generally converged to lower validation loss in these runs.\relax }}{10}{figure.caption.16}\protected@file@percent }
+\newlabel{fig:pretrain_curves}{{3.1}{10}{Validation-loss trajectories for embedding-dimension sweep experiments during pretraining. Larger embedding dimensions generally converged to lower validation loss in these runs.\relax }{figure.caption.16}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3.2}{\ignorespaces Pretraining scaling summary. Left: best validation loss versus embedding dimension. Right: final train/validation losses versus embedding dimension, showing the optimization-quality trend with model capacity.\relax }}{10}{figure.caption.17}\protected@file@percent }
+\newlabel{fig:pretrain_scaling}{{3.2}{10}{Pretraining scaling summary. Left: best validation loss versus embedding dimension. Right: final train/validation losses versus embedding dimension, showing the optimization-quality trend with model capacity.\relax }{figure.caption.17}{}}
+\@writefile{toc}{\contentsline {chapter}{\numberline {4}Losses and Metrics}{11}{chapter.4}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {chapter}{\numberline {5}Results and Figures}{12}{chapter.5}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {5.1}Qualitative Forecast Structure}{12}{section.5.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.1}{\ignorespaces Qualitative forecast example for geopotential at 500 hPa (mid-range lead). Left: truth, middle: prediction, right: signed error. The model captures broad synoptic structure while local magnitude errors remain visible.\relax }}{12}{figure.caption.18}\protected@file@percent }
+\newlabel{fig:sixpanel}{{5.1}{12}{Qualitative forecast example for geopotential at 500 hPa (mid-range lead). Left: truth, middle: prediction, right: signed error. The model captures broad synoptic structure while local magnitude errors remain visible.\relax }{figure.caption.18}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.2}{\ignorespaces Density scatter diagnostics across pressure levels (250/500/850 hPa) using all variables available at each level. The 1:1 line is shown to indicate calibration and amplitude fidelity.\relax }}{13}{figure.caption.19}\protected@file@percent }
+\newlabel{fig:scatters}{{5.2}{13}{Density scatter diagnostics across pressure levels (250/500/850 hPa) using all variables available at each level. The 1:1 line is shown to indicate calibration and amplitude fidelity.\relax }{figure.caption.19}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.3}{\ignorespaces Day-1 forecast/truth/error map panels for the two compared checkpoints. Early-lead structure is strong in both models, with different error textures over specific regions.\relax }}{13}{figure.caption.20}\protected@file@percent }
+\newlabel{fig:day1_models}{{5.3}{13}{Day-1 forecast/truth/error map panels for the two compared checkpoints. Early-lead structure is strong in both models, with different error textures over specific regions.\relax }{figure.caption.20}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.4}{\ignorespaces Autoregressive 2m-temperature rollout panels from the current emb768 forecast artifacts. This view complements scalar metrics with a direct visual trace of horizon-wise spatial degradation.\relax }}{14}{figure.caption.21}\protected@file@percent }
+\newlabel{fig:t2m_rollout_panels}{{5.4}{14}{Autoregressive 2m-temperature rollout panels from the current emb768 forecast artifacts. This view complements scalar metrics with a direct visual trace of horizon-wise spatial degradation.\relax }{figure.caption.21}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5.2}Global Skill Across Lead Time}{15}{section.5.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.5}{\ignorespaces Publication-style global skill panel: RMSE and ACC progression over lead time with interquartile bands across variables, comparing Embed-768 and Embed-1024 checkpoints.\relax }}{15}{figure.caption.22}\protected@file@percent }
+\newlabel{fig:global_skill_panel}{{5.5}{15}{Publication-style global skill panel: RMSE and ACC progression over lead time with interquartile bands across variables, comparing Embed-768 and Embed-1024 checkpoints.\relax }{figure.caption.22}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.6}{\ignorespaces Horizon-wise summary at day 5, day 10, and day 15. RMSE and ACC are averaged over variables at each horizon, enabling direct checkpoint comparison at milestone leads.\relax }}{15}{figure.caption.23}\protected@file@percent }
+\newlabel{fig:horizon_summary}{{5.6}{15}{Horizon-wise summary at day 5, day 10, and day 15. RMSE and ACC are averaged over variables at each horizon, enabling direct checkpoint comparison at milestone leads.\relax }{figure.caption.23}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5.1}{\ignorespaces Horizon summary (mean over variables) for Embed-768 and Embed-1024.\relax }}{16}{table.caption.24}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5.2}{\ignorespaces Checkpoint audit table from current 60-step evaluation summaries (mean over variables at 15-day horizon).\relax }}{16}{table.caption.25}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5.3}{\ignorespaces LoRA rank sweep summary from current evaluation runs (15-day mean metrics).\relax }}{16}{table.caption.26}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.3}Variable-Wise and Grouped Diagnostics}{16}{section.5.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.7}{\ignorespaces Temporal and latitudinal diagnostics for the compared checkpoints. The latitudinal panel highlights where error concentration changes with forecast horizon.\relax }}{17}{figure.caption.27}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.8}{\ignorespaces Training diagnostics and variable-wise performance. Training curves summarize optimization behavior; variable bars identify strengths/weaknesses by channel.\relax }}{17}{figure.caption.28}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.4}Long-Horizon Stability Diagnostics (60--90 Days)}{17}{section.5.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5.4}{\ignorespaces Long-horizon stability summary (all-variable means) from autoregressive rollout metrics.\relax }}{17}{table.caption.37}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.9}{\ignorespaces Per-variable change between checkpoints. Top: RMSE improvement (positive values indicate lower RMSE for Embed-1024 relative to Embed-768). Bottom: ACC gain (positive values indicate higher ACC for Embed-1024).\relax }}{18}{figure.caption.29}\protected@file@percent }
+\newlabel{fig:variable_delta}{{5.9}{18}{Per-variable change between checkpoints. Top: RMSE improvement (positive values indicate lower RMSE for Embed-1024 relative to Embed-768). Bottom: ACC gain (positive values indicate higher ACC for Embed-1024).\relax }{figure.caption.29}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.10}{\ignorespaces Grouped diagnostics by physical variable family (surface, temperature, geopotential, humidity, zonal wind, meridional wind). Solid lines denote Embed-768; dashed lines denote Embed-1024.\relax }}{19}{figure.caption.30}\protected@file@percent }
+\newlabel{fig:grouped_skill}{{5.10}{19}{Grouped diagnostics by physical variable family (surface, temperature, geopotential, humidity, zonal wind, meridional wind). Solid lines denote Embed-768; dashed lines denote Embed-1024.\relax }{figure.caption.30}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.11}{\ignorespaces Geopotential-specific diagnostics at 850/500/250 hPa. This figure provides the requested pressure-level-focused result set for RMSE and ACC behavior over lead time.\relax }}{20}{figure.caption.31}\protected@file@percent }
+\newlabel{fig:geopotential_levels}{{5.11}{20}{Geopotential-specific diagnostics at 850/500/250 hPa. This figure provides the requested pressure-level-focused result set for RMSE and ACC behavior over lead time.\relax }{figure.caption.31}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.12}{\ignorespaces Heatmap comparison across all 20 variables and 60 lead steps: RMSE for each checkpoint, RMSE delta, and ACC delta. These maps provide compact, publication-style visibility into where each checkpoint performs better or worse.\relax }}{21}{figure.caption.32}\protected@file@percent }
+\newlabel{fig:compare_heatmaps}{{5.12}{21}{Heatmap comparison across all 20 variables and 60 lead steps: RMSE for each checkpoint, RMSE delta, and ACC delta. These maps provide compact, publication-style visibility into where each checkpoint performs better or worse.\relax }{figure.caption.32}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.13}{\ignorespaces Fine-grained per-variable trajectories over the full rollout horizon. These panels are useful for variable-level discussion in oral presentation and defense.\relax }}{21}{figure.caption.33}\protected@file@percent }
+\newlabel{fig:all20_emb768}{{5.13}{21}{Fine-grained per-variable trajectories over the full rollout horizon. These panels are useful for variable-level discussion in oral presentation and defense.\relax }{figure.caption.33}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.14}{\ignorespaces Compact model comparison plot generated by the shared benchmark pipeline, summarizing mean RMSE/ACC progression for the compared checkpoints.\relax }}{22}{figure.caption.34}\protected@file@percent }
+\newlabel{fig:model_comparison_compact}{{5.14}{22}{Compact model comparison plot generated by the shared benchmark pipeline, summarizing mean RMSE/ACC progression for the compared checkpoints.\relax }{figure.caption.34}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.15}{\ignorespaces All-variable, surface, upper-air, T2M, and richer-variable ACC stability trajectories over long horizons.\relax }}{22}{figure.caption.35}\protected@file@percent }
+\newlabel{fig:acc_drift_overview_60_90}{{5.15}{22}{All-variable, surface, upper-air, T2M, and richer-variable ACC stability trajectories over long horizons.\relax }{figure.caption.35}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.16}{\ignorespaces Key-variable long-horizon ACC behavior for report variables (2m temperature, geopotential@500 hPa, total-column water vapour, and zonal wind@850 hPa).\relax }}{23}{figure.caption.36}\protected@file@percent }
+\newlabel{fig:acc_keyvars_60_90}{{5.16}{23}{Key-variable long-horizon ACC behavior for report variables (2m temperature, geopotential@500 hPa, total-column water vapour, and zonal wind@850 hPa).\relax }{figure.caption.36}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5.5}{\ignorespaces ACC threshold crossing days (90-day diagnostic): first day where each series drops below threshold.\relax }}{23}{table.caption.38}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.5}Day-by-Day 15-Day Rich-Variable Rollout}{23}{section.5.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.17}{\ignorespaces Larger day-level snapshots from the 15-day rich-variable rollout. These panels provide clearer qualitative evolution than a dense 15-cell contact sheet.\relax }}{24}{figure.caption.39}\protected@file@percent }
+\newlabel{fig:rich_day_by_day_main}{{5.17}{24}{Larger day-level snapshots from the 15-day rich-variable rollout. These panels provide clearer qualitative evolution than a dense 15-cell contact sheet.\relax }{figure.caption.39}{}}
+\@writefile{toc}{\contentsline {chapter}{\numberline {6}Challenges: Depth vs. Resolution Tradeoff}{25}{chapter.6}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {chapter}{\numberline {7}Future Work: Cascade, PEFT, and Architecture Refinement}{27}{chapter.7}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{lof}{\contentsline {figure}{\numberline {7.1}{\ignorespaces FuXi-style autoregressive cascade (short/medium/long). The cascade trains specialized models for successive windows and chains them at inference time. Perlin-noise-style perturbations can be applied to generate ensemble members and stabilize training.\relax }}{27}{figure.caption.40}\protected@file@percent }
+\newlabel{fig:cascade}{{7.1}{27}{FuXi-style autoregressive cascade (short/medium/long). The cascade trains specialized models for successive windows and chains them at inference time. Perlin-noise-style perturbations can be applied to generate ensemble members and stabilize training.\relax }{figure.caption.40}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {7.1}{\ignorespaces Observed 15-day rollout summary from current checkpoint comparison runs (lower RMSE and higher ACC are better).\relax }}{28}{table.caption.41}\protected@file@percent }
+\newlabel{tab:peft_gap}{{7.1}{28}{Observed 15-day rollout summary from current checkpoint comparison runs (lower RMSE and higher ACC are better).\relax }{table.caption.41}{}}
+\@writefile{toc}{\contentsline {chapter}{\numberline {8}Practical Lessons and Final Remarks}{29}{chapter.8}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {8.1}Explicit Time and Compute Limitations}{29}{section.8.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {A}Additional Rollout and Evaluation Diagnostics}{31}{appendix.A}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {A.1}Full 15-Day Contact Sheet (Appendix View)}{31}{section.A.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {A.1}{\ignorespaces Complete D1--D15 contact sheet from the rich-variable rollout (init 2021-03-05T18:00).\relax }}{31}{figure.caption.42}\protected@file@percent }
+\newlabel{fig:appendix_contact_sheet}{{A.1}{31}{Complete D1--D15 contact sheet from the rich-variable rollout (init 2021-03-05T18:00).\relax }{figure.caption.42}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {A.2}{\ignorespaces Early-horizon day-by-day frames (D1--D5).\relax }}{32}{figure.caption.43}\protected@file@percent }
+\newlabel{fig:appendix_day_1_5}{{A.2}{32}{Early-horizon day-by-day frames (D1--D5).\relax }{figure.caption.43}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {A.3}{\ignorespaces Late-horizon day-by-day frames (D11--D15).\relax }}{32}{figure.caption.44}\protected@file@percent }
+\newlabel{fig:appendix_day_11_15}{{A.3}{32}{Late-horizon day-by-day frames (D11--D15).\relax }{figure.caption.44}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {A.4}{\ignorespaces Additional small-multiple diagnostics for the baseline AR768 checkpoint.\relax }}{32}{figure.caption.45}\protected@file@percent }
+\newlabel{fig:appendix_small_multiples}{{A.4}{32}{Additional small-multiple diagnostics for the baseline AR768 checkpoint.\relax }{figure.caption.45}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {A.5}{\ignorespaces Expanded variable-group diagnostics from baseline evaluation outputs.\relax }}{32}{figure.caption.46}\protected@file@percent }
+\newlabel{fig:appendix_variable_groups}{{A.5}{32}{Expanded variable-group diagnostics from baseline evaluation outputs.\relax }{figure.caption.46}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {A.6}{\ignorespaces Baseline-vs-LoRA comparison panel (ACC) using current evaluation artifacts.\relax }}{33}{figure.caption.47}\protected@file@percent }
+\newlabel{fig:appendix_baseline_lora_acc}{{A.6}{33}{Baseline-vs-LoRA comparison panel (ACC) using current evaluation artifacts.\relax }{figure.caption.47}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {A.2}Additional Day-Level Panels}{33}{section.A.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {A.3}Additional Metric Panels From Current Evaluations}{33}{section.A.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {A.4}Architecture Reference Figures (Submission Copy)}{33}{section.A.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {A.7}{\ignorespaces Combined FuXi-core and cascade architecture reference included at the end for submission completeness.\relax }}{33}{figure.caption.48}\protected@file@percent }
+\newlabel{fig:appendix_fuxi_cascade_arch}{{A.7}{33}{Combined FuXi-core and cascade architecture reference included at the end for submission completeness.\relax }{figure.caption.48}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {A.8}{\ignorespaces Dedicated Swin architecture reference figure included in the appendix end-section.\relax }}{34}{figure.caption.49}\protected@file@percent }
+\newlabel{fig:appendix_swin_arch}{{A.8}{34}{Dedicated Swin architecture reference figure included in the appendix end-section.\relax }{figure.caption.49}{}}
+\bibcite{fuxi}{1}
+\bibcite{weatherbench2}{2}
+\bibcite{swin}{3}
+\bibcite{unet}{4}
+\gdef \@abspage@last{38}

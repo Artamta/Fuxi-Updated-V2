@@ -10,6 +10,7 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{graphicx,caption,subcaption,float}
+\usepackage[dvipsnames]{xcolor}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{geometry}
 \usepackage{setspace}
@@ -27,6 +28,11 @@
 \captionsetup{font=small,labelfont=bf,skip=6pt}
 \captionsetup[sub]{font=footnotesize,labelfont=bf,skip=4pt}
 
+\definecolor{iiserBlue}{HTML}{003B73}
+\definecolor{iiserTeal}{HTML}{0B6E6E}
+\definecolor{iiserSlate}{HTML}{2F3B52}
+\hypersetup{colorlinks=true,linkcolor=iiserBlue,citecolor=iiserBlue,urlcolor=iiserTeal}
+
 % Reduce float spacing
 \setlength{\textfloatsep}{10pt}
 \setlength{\floatsep}{8pt}
@@ -38,29 +44,36 @@
 % Title Page (Improved, tighter, same structure)
 % ---------------------------------------------------------
 \begin{titlepage}
+\thispagestyle{empty}
 \centering
 
-\vspace*{1.2cm}
+\vspace*{0.5cm}
+\includegraphics[width=0.19\textwidth]{iiser-pune-logo.png}\\[0.65cm]
 
-{\Large Indian Institute of Science Education and Research (IISER) Pune}\\[4pt]
-{\large Department of Data Science}\\[1.2cm]
+{\Large\textcolor{iiserSlate}{Indian Institute of Science Education and Research (IISER) Pune}}\\[2pt]
+{\large\textcolor{iiserSlate}{Department of Data Science}}\\[0.9cm]
 
-{\Huge\bfseries A FuXi-Inspired\\[4pt]
-Machine Learning Model for\\[4pt]
-Global Weather Forecasting}\\[1.2cm]
+{\color{iiserBlue}\rule{0.88\linewidth}{1.2pt}}\\[0.6cm]
+{\Huge\bfseries\textcolor{iiserBlue}{A FuXi-Inspired}}\\[3pt]
+{\Huge\bfseries\textcolor{iiserBlue}{Machine Learning Model for}}\\[3pt]
+{\Huge\bfseries\textcolor{iiserBlue}{Global Weather Forecasting}}\\[0.55cm]
+{\color{iiserBlue}\rule{0.88\linewidth}{0.8pt}}\\[0.95cm]
 
-{\Large Semester Project Report}\\[0.3cm]
-\rule{0.55\linewidth}{0.7pt}\\[1.0cm]
+{\Large\textbf{\textcolor{iiserTeal}{Semester Project Report}}}\\[1.0cm]
 
+\setlength{\fboxsep}{10pt}
+\fcolorbox{iiserBlue}{white}{%
+\begin{minipage}{0.82\linewidth}
+\centering
 {\large\textbf{Author}}\\[3pt]
 {\Large Ayush Raj}\\
-{\large Roll No: 20221068}\\[0.8cm]
-
+{\large Roll No: 20221068}\\[0.75cm]
 {\large\textbf{Supervisor}}\\[3pt]
-{\Large Dr.\ Bedartha Goswami}\\[1.3cm]
+{\Large Dr.\ Bedartha Goswami}
+\end{minipage}}
 
 \vfill
-{\footnotesize Project Repository: \url{https://github.com/Artamta/Fuxi-Weather-Prediction}}\\[0.2cm]
+{\footnotesize\textbf{Project Repository:} \url{https://github.com/Artamta/Fuxi-Updated-V2}}\\[0.2cm]
 {\large April 2026}
 
 \end{titlepage}
@@ -99,6 +112,21 @@ This semester project focuses on implementing the \emph{core} FuXi-like module (
   \includegraphics[width=0.9\linewidth]{basic_arch.png}
   \caption{Simplified FuXi architecture overview used as a high-level reference before detailed block-level discussion.}
   \label{fig:fuxi_basic_architecture}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{subfigure}[b]{0.66\textwidth}
+    \includegraphics[width=\linewidth]{fuxi_and_cascade_architecture.png}
+    \caption{Combined FuXi core and cascade workflow reference.}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.30\textwidth}
+    \includegraphics[width=\linewidth]{swin_architecture.png}
+    \caption{Dedicated Swin architecture reference used in this report.}
+  \end{subfigure}
+  \caption{Submission architecture references provided for this project: full FuXi-cascade context and Swin block-level view.}
+  \label{fig:submission_arch_refs}
 \end{figure}
 
 A concise description of the data flow:
@@ -359,21 +387,7 @@ The model uses a relatively large embedding size (512) and deep Swin blocks, whi
 
 \section{Pretraining scaling results (embed dimension sweep)}
 
-To document pretraining work beyond a single checkpoint, I include an embedding-dimension sweep using the available pretraining histories (embed dimensions 512, 768, 1024, 1536, 2048). The figures below summarize both optimization trajectories and the trend of best validation loss with model size.
 
-\begin{figure}[!htbp]
-  \centering
-  \includegraphics[width=0.9\linewidth]{publication_pretraining_curves.png}
-  \caption{Validation-loss trajectories for embedding-dimension sweep experiments during pretraining. Larger embedding dimensions generally converged to lower validation loss in these runs.}
-  \label{fig:pretrain_curves}
-\end{figure}
-
-\begin{figure}[!htbp]
-  \centering
-  \includegraphics[width=0.9\linewidth]{publication_pretraining_scaling.png}
-  \caption{Pretraining scaling summary. Left: best validation loss versus embedding dimension. Right: final train/validation losses versus embedding dimension, showing the optimization-quality trend with model capacity.}
-  \label{fig:pretrain_scaling}
-\end{figure}
 
 % ---------------------------------------------------------
 \chapter{Losses and Metrics}
@@ -444,6 +458,13 @@ This chapter presents an extended evaluation pack with publication-style diagnos
   \end{subfigure}
   \caption{Day-1 forecast/truth/error map panels for the two compared checkpoints. Early-lead structure is strong in both models, with different error textures over specific regions.}
   \label{fig:day1_models}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.98\linewidth]{../results_new/checkpoint_emb768/forecast/t2m_rollout_panels.png}
+  \caption{Autoregressive 2m-temperature rollout panels from the current emb768 forecast artifacts. This view complements scalar metrics with a direct visual trace of horizon-wise spatial degradation.}
+  \label{fig:t2m_rollout_panels}
 \end{figure}
 
 \FloatBarrier
@@ -529,18 +550,7 @@ Medium-stage LoRA & 32 & 228.42 & 0.3938 \\
 
 \FloatBarrier
 
-\begin{figure}[!htbp]
-  \centering
-  \begin{subfigure}[b]{0.48\textwidth}
-    \includegraphics[width=\linewidth]{train_val.png}
-    \caption{Training/Validation Loss}
-  \end{subfigure}
-  \begin{subfigure}[b]{0.48\textwidth}
-    \includegraphics[width=\linewidth]{per_var_err.png}
-    \caption{Per-variable RMSE and ACC summary}
-  \end{subfigure}
-  \caption{Training diagnostics and variable-wise performance. Training curves summarize optimization behavior; variable bars identify strengths/weaknesses by channel.}
-\end{figure}
+
 
 \FloatBarrier
 
@@ -696,7 +706,7 @@ For qualitative temporal evolution, I extracted one frame per day (day 1 to day 
 
 
 \textbf{CODE:}\\
-\url{https://github.com/Artamta/Fuxi-Weather-Prediction}\\[1.6cm]
+\url{https://github.com/Artamta/Fuxi-Updated-V2}\\[1.6cm]
 
 One of the central technical observations of this work is the tradeoff between architecture depth and data resolution. At low spatial resolution (e.g., $64\times32$), deep transformer stacks (many Swin layers) can fail to learn meaningful gradients and may produce near-constant outputs -- a symptom sometimes referred to as \emph{field collapse}. We observed this empirically:
 
@@ -760,6 +770,17 @@ This project provided concrete, hands-on lessons:
   \item \textbf{Compute considerations:} Training at high resolution and depth requires substantial compute (A100 or similar), careful checkpointing, and extensive tuning.
 \end{itemize}
 
+\section{Explicit Time and Compute Limitations}
+
+To make the submission boundaries explicit, the following constraints directly shaped the final scope:
+
+\begin{itemize}
+  \item \textbf{GPU-memory ceiling:} Deep Swin stacks at high spatial resolution forced conservative batch sizes and limited the number of full ablation runs that could be completed within one semester.
+  \item \textbf{Wall-time budget:} Multi-day autoregressive evaluations (especially 60--90 day diagnostics) are expensive, so only a focused set of checkpoint comparisons could be audited end-to-end in this submission cycle.
+  \item \textbf{PEFT search budget:} LoRA stage/rank/target-module sweeps were explored, but the full combinatorial PEFT tuning space remains incomplete because each candidate requires both retraining and long-horizon evaluation.
+  \item \textbf{Reproducibility priority over breadth:} Compute was allocated preferentially to stable, reproducible pipelines and verified figures rather than maximizing the number of partially validated experimental branches.
+\end{itemize}
+
 % ---------------------------------------------------------
 \appendix
 
@@ -772,60 +793,6 @@ This project provided concrete, hands-on lessons:
   \includegraphics[width=0.98\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_by_day_contact_sheet.png}
   \caption{Complete D1--D15 contact sheet from the rich-variable rollout (init 2021-03-05T18:00).}
   \label{fig:appendix_contact_sheet}
-\end{figure}
-
-\section{Additional Day-Level Panels}
-
-\begin{figure}[!htbp]
-  \centering
-  \begin{subfigure}[b]{0.19\textwidth}
-    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_01_lead_024h.png}
-    \caption{D1}
-  \end{subfigure}
-  \begin{subfigure}[b]{0.19\textwidth}
-    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_02_lead_048h.png}
-    \caption{D2}
-  \end{subfigure}
-  \begin{subfigure}[b]{0.19\textwidth}
-    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_03_lead_072h.png}
-    \caption{D3}
-  \end{subfigure}
-  \begin{subfigure}[b]{0.19\textwidth}
-    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_04_lead_096h.png}
-    \caption{D4}
-  \end{subfigure}
-  \begin{subfigure}[b]{0.19\textwidth}
-    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_05_lead_120h.png}
-    \caption{D5}
-  \end{subfigure}
-  \caption{Early-horizon day-by-day frames (D1--D5).}
-  \label{fig:appendix_day_1_5}
-\end{figure}
-
-\begin{figure}[!htbp]
-  \centering
-  \begin{subfigure}[b]{0.19\textwidth}
-    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_11_lead_264h.png}
-    \caption{D11}
-  \end{subfigure}
-  \begin{subfigure}[b]{0.19\textwidth}
-    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_12_lead_288h.png}
-    \caption{D12}
-  \end{subfigure}
-  \begin{subfigure}[b]{0.19\textwidth}
-    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_13_lead_312h.png}
-    \caption{D13}
-  \end{subfigure}
-  \begin{subfigure}[b]{0.19\textwidth}
-    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_14_lead_336h.png}
-    \caption{D14}
-  \end{subfigure}
-  \begin{subfigure}[b]{0.19\textwidth}
-    \includegraphics[width=\linewidth]{../prof/report/gifs_daybyday_init0_15d/rich_rollout_15d_init0_20210305T1800_day_by_day/day_15_lead_360h.png}
-    \caption{D15}
-  \end{subfigure}
-  \caption{Late-horizon day-by-day frames (D11--D15).}
-  \label{fig:appendix_day_11_15}
 \end{figure}
 
 \section{Additional Metric Panels From Current Evaluations}
